@@ -13,8 +13,9 @@ typedef struct {
 #define MAT_PRINT(m) mat_print(m, #m)
 
 Mat mat_alloc(size_t rows, size_t cols);
-__global__ void MatFillKernel(Mat m, float n);
-void MatFill(Mat* m, float n);
+__global__ void mat_fill_kernel(Mat m, float n);
+void mat_fill(Mat* m, float n);
+void mat_row(Mat m, size_t row);
 // __global__ void MatRandKernel(Mat m, float low, float high);
 // void MatRand(Mat* m, float low, float high);
 
@@ -29,16 +30,16 @@ Mat mat_alloc(size_t rows, size_t cols) {
     return m;
 }
 
-__global__ void MatFillKernel(Mat m, float n) {
+__global__ void mat_fill_kernel(Mat m, float n) {
     int tx = threadIdx.x;
     int ty = threadIdx.y;
     MAT_AT(m, tx, ty) = n;
 }
 
-void MatFill(Mat* m, float n) {
+void mat_fill(Mat* m, float n) {
     dim3 dimGrid(1, 1);
     dim3 dimBlock(m->rows, m->cols);
-    MatFillKernel<<<dimGrid, dimBlock>>>(*m, n);
+    mat_fill_kernel<<<dimGrid, dimBlock>>>(*m, n);
 }
 
 // __global__ void MatRandKernel(Mat m, float low, float high) {}
