@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdio>
+#include <cmath>
 
 #ifndef GNN_ASSERT
 #include <assert.h>
@@ -14,6 +15,7 @@ typedef struct {
     float *es;
 } Mat;
 
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #define MAT_AT(m, i, j) (m).es[(i)*(m).stride + (j)]
 #define MAT_PRINT(m) mat_print(m, #m)
 
@@ -27,7 +29,31 @@ Mat mat_row(Mat m, size_t row);
 __global__ void mat_copy_kernel(Mat dst, Mat m);
 void mat_copy(Mat dst, Mat m);
 
+// __global__ void mat_dot_kernel(Mat dst, Mat a, Mat b);
+// void mat_dot(Mat dst, Mat a, Mat b);
+
+__global__ void mat_sig_kernel(Mat m);
+void mat_sig(Mat m);
+
+__global__ void mat_tanh_kernel(Mat m);
+void mat_tanh(Mat m);
+
+__global__ void mat_relu_kernel(Mat m);
+void mat_relu(Mat m);
+
 void mat_print(Mat m, const char *name);
+
+__device__ float sigmoidf(float x) {
+    return 1.f / (1.f + expf(x));
+}
+
+__device__ float tanhf(float x) {
+    return (expf(2*x) - 1) / (expf(2*x) + 1);
+}
+
+__device__ float reluf(float x) {
+    return MAX(0, x);
+}
 
 #ifdef GNN_IMPLEMENTATION
 
@@ -71,6 +97,45 @@ void mat_copy(Mat dst, Mat m) {
     dim3 dimGrid(1, 1);
     dim3 dimBlock(m.rows, m.cols);
     mat_copy_kernel<<<dimGrid, dimBlock>>>(dst, m);
+}
+
+// __global__ void mat_dot_kernel(Mat dst, Mat a, Mat b) {}
+// void mat_dot(Mat dst, Mat a, Mat b) {}
+
+__global__ void mat_sig_kernel(Mat m) {
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    MAT_AT(m, tx, ty) = sigmoidf(MAT_AT(m, tx, ty));
+}
+
+void mat_sig(Mat m) {
+    dim3 dimGrid(1, 1);
+    dim3 dimBlock(m.rows, m.cols);
+    mat_sig_kernel<<<dimGrid, dimBlock>>>(m);
+}
+
+__global__ void mat_tanh_kernel(Mat m) {
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    MAT_AT(m, tx, ty) = tanhf(MAT_AT(m, tx, ty));
+}
+
+void mat_tanh(Mat m) {
+    dim3 dimGrid(1, 1);
+    dim3 dimBlock(m.rows, m.cols);
+    mat_tanh_kernel<<<dimGrid, dimBlock>>>(m);
+}
+
+__global__ void mat_relu_kernel(Mat m) {
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    MAT_AT(m, tx, ty) = reluf(MAT_AT(m, tx, ty));
+}
+
+void mat_relu(Mat m) {
+    dim3 dimGrid(1, 1);
+    dim3 dimBlock(m.rows, m.cols);
+    mat_relu_kernel<<<dimGrid, dimBlock>>>(m);
 }
 
 void mat_print(Mat m, const char *name) {
