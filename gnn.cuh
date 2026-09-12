@@ -12,12 +12,22 @@ typedef struct {
 #define MAT_AT(m, i, j) (m).es[(i)*(m).stride + (j)]
 #define MAT_PRINT(m) mat_print(m, #m)
 
+Mat mat_alloc(size_t rows, size_t cols);
 __global__ void MatFillKernel(Mat m, float n);
 void MatFill(Mat* m, float n);
-__global__ void MatRandKernel(Mat m, float low, float high);
-void MatRand(Mat* m, float low, float high);
+// __global__ void MatRandKernel(Mat m, float low, float high);
+// void MatRand(Mat* m, float low, float high);
 
 #ifdef GNN_IMPLEMENTATION
+
+Mat mat_alloc(size_t rows, size_t cols) {
+    Mat m;
+    m.rows = rows;
+    m.cols = cols;
+    m.stride = cols;
+    cudaMalloc((void**)&m.es, rows * cols * sizeof(float));
+    return m;
+}
 
 __global__ void MatFillKernel(Mat m, float n) {
     int tx = threadIdx.x;
@@ -26,35 +36,27 @@ __global__ void MatFillKernel(Mat m, float n) {
 }
 
 void MatFill(Mat* m, float n) {
-    float* d_es;
-    int size = m->rows * m->cols * sizeof(float);
-    int width = m->stride;
-
-    cudaMalloc((void**)&d_es, size);
-    Mat d_mat = *m;
-    d_mat.es = d_es;
-
     dim3 dimGrid(1, 1);
-    dim3 dimBlock(width, width);
-
-    MatFillKernel<<<dimGrid, dimBlock>>>(d_mat, n);
-
-    cudaMemcpy(m->es, d_es, size, cudaMemcpyDeviceToHost);
-    cudaFree(d_es);
+    dim3 dimBlock(m->rows, m->cols);
+    MatFillKernel<<<dimGrid, dimBlock>>>(*m, n);
 }
 
-__global__ void MatRandKernel(Mat m, float low, float high) {}
-void MatRand(Mat* m, float low, float high) {}
+// __global__ void MatRandKernel(Mat m, float low, float high) {}
+// void MatRand(Mat* m, float low, float high) {}
 
 void mat_print(Mat m, const char *name) {
+    float* host_es = (float*)malloc(m.rows * m.stride * sizeof(float));
+    cudaMemcpy(host_es, m.es, m.rows * m.stride * sizeof(float), cudaMemcpyDeviceToHost);
+
     printf("%s\n", name);
     for (size_t i = 0; i < m.rows; ++i) {
         for (size_t j = 0; j < m.cols; ++j) {
-            printf("    %f ", MAT_AT(m, i, j));
+            printf("    %f ", host_es[i*m.stride + j]);
         }
         printf("\n");
     }
     printf("\n");
+    free(host_es);
 }
 
 #endif //GNN_IMPLEMENTATION
