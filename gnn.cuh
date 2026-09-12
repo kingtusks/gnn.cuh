@@ -44,7 +44,7 @@ void mat_relu(Mat m);
 void mat_print(Mat m, const char *name);
 
 __device__ float sigmoidf(float x) {
-    return 1.f / (1.f + expf(x));
+    return 1.f / (1.f + expf(-x));
 }
 
 __device__ float tanhf(float x) {

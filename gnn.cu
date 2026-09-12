@@ -6,7 +6,14 @@ int main() {
     mat_fill(m, 2);
     MAT_PRINT(m);
 
-    Mat dst = mat_alloc(3, 3);
-    mat_copy(dst, m);
-    MAT_PRINT(dst);
+    mat_sig(m);
+    MAT_PRINT(m);
+    mat_fill(m, 2);
+
+    mat_tanh(m);
+    MAT_PRINT(m);
+    mat_fill(m, 2);
+
+    mat_relu(m);
+    MAT_PRINT(m);
 }
