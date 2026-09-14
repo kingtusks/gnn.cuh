@@ -32,6 +32,9 @@ void mat_copy(Mat dst, Mat m);
 // __global__ void mat_dot_kernel(Mat dst, Mat a, Mat b);
 // void mat_dot(Mat dst, Mat a, Mat b);
 
+__global__ void mat_sum_kernel(Mat dst, Mat a);
+void mat_sum(Mat dst, Mat a);
+
 __global__ void mat_sig_kernel(Mat m);
 void mat_sig(Mat m);
 
@@ -56,6 +59,8 @@ __device__ float reluf(float x) {
 }
 
 #ifdef GNN_IMPLEMENTATION
+
+//GENERAL PURPOSE
 
 Mat mat_alloc(size_t rows, size_t cols) {
     Mat m;
@@ -99,8 +104,28 @@ void mat_copy(Mat dst, Mat m) {
     mat_copy_kernel<<<dimGrid, dimBlock>>>(dst, m);
 }
 
+//MATRIX OPS
+
+//USE WARPTILING (whatever that is)
 // __global__ void mat_dot_kernel(Mat dst, Mat a, Mat b) {}
-// void mat_dot(Mat dst, Mat a, Mat b) {}
+// void mat_dot(Mat dst, Mat a, Mat b) {};
+
+__global__ void mat_sum_kernel(Mat dst, Mat a) {
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    MAT_AT(dst, tx, ty) += MAT_AT(a, tx, ty);
+}
+
+void mat_sum(Mat dst, Mat a) {
+    GNN_ASSERT(dst.rows == a.rows);
+    GNN_ASSERT(dst.cols == a.cols);
+
+    dim3 dimGrid(1, 1);
+    dim3 dimBlock(dst.rows, dst.cols);
+    mat_sum_kernel<<<dimGrid, dimBlock>>>(dst, a);
+}
+
+//ACTIVATIONS
 
 __global__ void mat_sig_kernel(Mat m) {
     int tx = threadIdx.x;

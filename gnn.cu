@@ -4,16 +4,11 @@
 int main() {
     Mat m = mat_alloc(3, 3);
     mat_fill(m, 2);
-    MAT_PRINT(m);
+    Mat b = mat_alloc(3, 3);
+    mat_fill(b, 3);
 
-    mat_sig(m);
-    MAT_PRINT(m);
-    mat_fill(m, 2);
+    mat_sum(b, m);
 
-    mat_tanh(m);
-    MAT_PRINT(m);
-    mat_fill(m, 2);
-
-    mat_relu(m);
+    MAT_PRINT(b);
     MAT_PRINT(m);
 }
