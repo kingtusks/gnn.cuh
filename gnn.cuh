@@ -19,6 +19,9 @@ typedef struct {
 #define MAT_AT(m, i, j) (m).es[(i)*(m).stride + (j)]
 #define MAT_PRINT(m) mat_print(m, #m)
 
+void cuda_check(cudaError_t err, const char* file, int line);
+#define CUDA_CHECK(call) cudaCheck(call, __FILE__, __LINE__)
+
 Mat mat_alloc(size_t rows, size_t cols);
 
 __global__ void mat_fill_kernel(Mat m, float n);
@@ -29,8 +32,8 @@ Mat mat_row(Mat m, size_t row);
 __global__ void mat_copy_kernel(Mat dst, Mat m);
 void mat_copy(Mat dst, Mat m);
 
-// __global__ void mat_dot_kernel(Mat dst, Mat a, Mat b);
-// void mat_dot(Mat dst, Mat a, Mat b);
+__global__ void mat_dot_kernel(Mat dst, Mat a, Mat b);
+void mat_dot(Mat dst, Mat a, Mat b);
 
 __global__ void mat_sum_kernel(Mat dst, Mat a);
 void mat_sum(Mat dst, Mat a);
@@ -59,6 +62,15 @@ __device__ float reluf(float x) {
 }
 
 #ifdef GNN_IMPLEMENTATION
+
+//CUDA CHECK
+
+void cuda_check(cudaError_t err, const char* file, int line) {
+    if (err != cudaSuccess) {
+        fprintf(stderr, "%s:%d CUDA Error: %s\n", file, line, cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
+}
 
 //GENERAL PURPOSE
 
@@ -107,8 +119,13 @@ void mat_copy(Mat dst, Mat m) {
 //MATRIX OPS
 
 //USE WARPTILING (whatever that is)
-// __global__ void mat_dot_kernel(Mat dst, Mat a, Mat b) {}
-// void mat_dot(Mat dst, Mat a, Mat b) {};
+__global__ void mat_dot_kernel(Mat dst, Mat a, Mat b) {
+
+}
+
+void mat_dot(Mat dst, Mat a, Mat b) {
+
+}
 
 __global__ void mat_sum_kernel(Mat dst, Mat a) {
     int tx = threadIdx.x;
