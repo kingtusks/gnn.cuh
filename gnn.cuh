@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cmath>
+#include <cuda_runtime.h>
 
 #ifndef GNN_ASSERT
 #include <assert.h>
@@ -17,14 +18,21 @@ typedef struct {
 
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #define MAT_AT(m, i, j) (m).es[(i)*(m).stride + (j)]
+#define VEC_AT(v, i, j) (v)[(i)*(m).stride + (j)]
 #define MAT_PRINT(m) mat_print(m, #m)
 
 void cuda_check(cudaError_t err, const char* file, int line);
-#define CUDA_CHECK(call) cudaCheck(call, __FILE__, __LINE__)
+
+#define CUDA_CHECK(call) cuda_check(call, __FILE__, __LINE__)
 
 Mat mat_alloc(size_t rows, size_t cols);
 
-__global__ void mat_fill_kernel(Mat m, float n);
+__global__ void mat_fill_contiguous_kernel(float* p, float n, size_t area);
+void mat_fill_contiguous(Mat m, float n);
+
+__global__ void mat_fill_noncontiguous_kernel(Mat m, float n);
+void mat_fill_noncontiguous(Mat m, float n);
+
 void mat_fill(Mat m, float n);
 
 Mat mat_row(Mat m, size_t row);
@@ -83,16 +91,38 @@ Mat mat_alloc(size_t rows, size_t cols) {
     return m;
 }
 
-__global__ void mat_fill_kernel(Mat m, float n) {
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
-    MAT_AT(m, tx, ty) = n;
+__global__ void mat_fill_contiguous_kernel(float* p, float n, size_t area) {
+    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t stride = (size_t) gridDim.x * blockDim.x;
+
+    for (; i < area; i += stride) p[i] = n;
+}
+
+void mat_fill_contiguous(Mat m, float n) {
+    unsigned int threads = 256;
+    size_t area = (size_t) m.rows * m.cols;
+    unsigned int blocks = (unsigned int) ((area + threads - 1) / threads);
+
+    mat_fill_contiguous_kernel<<<blocks, threads>>>(m.es, n, area);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+__global__ void mat_fill_noncontiguous_kernel(Mat m, float n) {
+    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
+    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = n;
+}
+
+void mat_fill_noncontiguous(Mat m, float n) {
+    dim3 threads(32, 8);
+    dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
+
+    mat_fill_noncontiguous_kernel<<<blocks, threads>>>(m, n);
 }
 
 void mat_fill(Mat m, float n) {
-    dim3 dimGrid(1, 1);
-    dim3 dimBlock(m.rows, m.cols);
-    mat_fill_kernel<<<dimGrid, dimBlock>>>(m, n);
+    (m.stride == m.cols) ? mat_fill_contiguous(m, n) : mat_fill_noncontiguous(m, n);
 }
 
 Mat mat_row(Mat m, size_t row) {

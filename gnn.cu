@@ -7,8 +7,6 @@ int main() {
     Mat b = mat_alloc(3, 3);
     mat_fill(b, 3);
 
-    mat_sum(b, m);
-
-    MAT_PRINT(b);
     MAT_PRINT(m);
+    MAT_PRINT(b);
 }
