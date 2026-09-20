@@ -45,18 +45,27 @@ __global__ void mat_dot_kernel(Mat dst, Mat a, Mat b);
 void mat_dot(Mat dst, Mat a, Mat b);
 
 __global__ void mat_sum_contiguous_kernel(float* dst, const float* src, size_t area);
-void mat_sum_contiguous(float* dst, const float* src, size_t area);
+void mat_sum_contiguous(Mat dst, Mat m);
 __global__ void mat_sum_noncontiguous_kernel(Mat dst, Mat m);
 void mat_sum_noncontiguous(Mat dst, Mat m);
 void mat_sum(Mat dst, Mat m);
 
-__global__ void mat_sig_kernel(Mat m);
+__global__ void mat_sig_contiguous_kernel(float* p, size_t area);
+void mat_sig_contiguous(Mat m);
+__global__ void mat_sig_noncontiguous_kernel(Mat m);
+void mat_sig_noncontiguous(Mat m);
 void mat_sig(Mat m);
 
-__global__ void mat_tanh_kernel(Mat m);
+__global__ void mat_tanh_contiguous_kernel(float* p, size_t area);
+void mat_tanh_contiguous(Mat m);
+__global__ void mat_tanh_noncontiguous_kernel(Mat m);
+void mat_tanh_noncontiguous(Mat m);
 void mat_tanh(Mat m);
 
-__global__ void mat_relu_kernel(Mat m);
+__global__ void mat_relu_contiguous_kernel(float* p, size_t area);
+void mat_relu_contiguous(Mat m);
+__global__ void mat_relu_noncontiguous_kernel(Mat m);
+void mat_relu_noncontiguous(Mat m);
 void mat_relu(Mat m);
 
 void mat_print(Mat m, const char *name);
@@ -218,41 +227,51 @@ void mat_sum(Mat dst, Mat m) {
 
 //ACTIVATIONS
 
-__global__ void mat_sig_kernel(Mat m) {
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
-    MAT_AT(m, tx, ty) = sigmoidf(MAT_AT(m, tx, ty));
+__global__ void mat_sig_contiguous_kernel(float* p, size_t area) {
+    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t stride = (size_t) gridDim.x * blockDim.x;
+
+    for (; i < area; i += stride) p[i] = sigmoidf(p[i]);
+}
+
+void mat_sig_contiguous(Mat m) {
+    unsigned int threads = 256;
+    size_t area = (size_t) m.rows * m.cols;
+    unsigned int blocks = (unsigned int) ((area + threads - 1) / threads);
+
+    mat_sig_contiguous_kernel<<<blocks, threads>>>(m.es, area);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+__global__ void mat_sig_noncontiguous_kernel(Mat m) {
+    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
+    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = sigmoidf(MAT_AT(m, i, j));
+}
+
+void mat_sig_noncontiguous(Mat m) {
+    dim3 threads(32, 8);
+    dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
+    mat_sig_noncontiguous_kernel<<<blocks, threads>>>(m);
+    CUDA_CHECK(cudaGetLastError());
 }
 
 void mat_sig(Mat m) {
-    dim3 dimGrid(1, 1);
-    dim3 dimBlock(m.rows, m.cols);
-    mat_sig_kernel<<<dimGrid, dimBlock>>>(m);
+    (m.stride == m.cols) ? mat_sig_contiguous(m) : mat_sig_noncontiguous(m);
 }
 
-__global__ void mat_tanh_kernel(Mat m) {
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
-    MAT_AT(m, tx, ty) = tanhf(MAT_AT(m, tx, ty));
-}
+__global__ void mat_tanh_contiguous_kernel(float* p, size_t area);
+void mat_tanh_contiguous(Mat m);
+__global__ void mat_tanh_noncontiguous_kernel(Mat m);
+void mat_tanh_noncontiguous(Mat m);
+void mat_tanh(Mat m);
 
-void mat_tanh(Mat m) {
-    dim3 dimGrid(1, 1);
-    dim3 dimBlock(m.rows, m.cols);
-    mat_tanh_kernel<<<dimGrid, dimBlock>>>(m);
-}
-
-__global__ void mat_relu_kernel(Mat m) {
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
-    MAT_AT(m, tx, ty) = reluf(MAT_AT(m, tx, ty));
-}
-
-void mat_relu(Mat m) {
-    dim3 dimGrid(1, 1);
-    dim3 dimBlock(m.rows, m.cols);
-    mat_relu_kernel<<<dimGrid, dimBlock>>>(m);
-}
+__global__ void mat_relu_contiguous_kernel(float* p, size_t area);
+void mat_relu_contiguous(Mat m);
+__global__ void mat_relu_noncontiguous_kernel(Mat m);
+void mat_relu_noncontiguous(Mat m);
+void mat_relu(Mat m);
 
 void mat_print(Mat m, const char *name) {
     float* host_es = (float*)malloc(m.rows * m.stride * sizeof(float));
