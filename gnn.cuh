@@ -3,11 +3,16 @@
 #include <cstdio>
 #include <cmath>
 #include <cuda_runtime.h>
+#include <stdint.h>
 
 #ifndef GNN_ASSERT
 #include <assert.h>
 #define GNN_ASSERT assert
 #endif //GNN_ASSERT
+
+#ifndef MAT_RAND_SEED
+#define MAT_RAND_SEED 12162008ULL
+#endif //MAT_RAND_SEED
 
 typedef struct {
     size_t rows;
@@ -34,6 +39,13 @@ void mat_fill_contiguous(Mat m, float n);
 __global__ void mat_fill_noncontiguous_kernel(Mat m, float n);
 void mat_fill_noncontiguous(Mat m, float n);
 void mat_fill(Mat m, float n);
+
+void mat_set_seed(uint64_t seed);
+__global__ void mat_rand_contiguous_kernel(float* p, float low, float high, size_t area, uint64_t seed);
+void mat_rand_contiguous(Mat m, float low, float high, uint64_t seed);
+__global__ void mat_rand_noncontiguous_kernel(Mat m, float low, float high, uint64_t seed);
+void mat_rand_noncontiguous(Mat m, float low, float high, uint64_t seed);
+void mat_rand(Mat m, float low, float high);
 
 Mat mat_row(Mat m, size_t row);
 
@@ -72,16 +84,28 @@ void mat_relu(Mat m);
 
 void mat_print(Mat m, const char *name);
 
-__device__ float sigmoidf(float x) {
+__device__ __forceinline__ float __sigmoidf(float x) {
     return 1.f / (1.f + expf(-x));
 }
 
-__device__ float tanhf(float x) {
+__device__ __forceinline__ float __tanhf(float x) {
     return (expf(2*x) - 1) / (expf(2*x) + 1);
 }
 
-__device__ float reluf(float x) {
+__device__ __forceinline__ float __reluf(float x) {
     return MAX(0, x);
+}
+
+__host__ __device__ __forceinline__ uint64_t splitmix64(uint64_t x) {
+    x += 0x9E3779B97F4A7C15ULL;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+    return (x ^ (x >> 31));
+}
+
+__device__ __forceinline__ float rand_uniform(uint64_t seed, uint64_t i) {
+    uint64_t r = splitmix64(splitmix64(seed) ^ i);
+    return (float) ((r >> 40) * (1.f / 16777216.f));
 }
 
 #ifdef GNN_IMPLEMENTATION
@@ -141,6 +165,27 @@ void mat_fill(Mat m, float n) {
     (m.stride == m.cols) ? mat_fill_contiguous(m, n) : mat_fill_noncontiguous(m, n);
 }
 
+static uint64_t mat_rand_seed = MAT_RAND_SEED;
+
+void mat_set_seed(uint64_t seed) {
+    mat_rand_seed = seed;
+}
+
+__global__ void mat_rand_contiguous_kernel(float* p, float low, float high, size_t area);
+void mat_rand_contiguous(Mat m, float low, float high);
+__global__ void mat_rand_noncontiguous_kernel(Mat m, float low, float high);
+void mat_rand_noncontiguous(Mat m, float low, float high);
+
+void mat_rand(Mat m, float low, float high) {
+    //for testing
+#if 0
+    uint64_t seed = mat_rand_seed++; //new seed per call
+#else
+    uint64_t seed = mat_rand_seed;
+#endif
+    (m.stride == m.cols) ? mat_rand_contiguous(m, low, high, seed) : mat_rand_noncontiguous(m, low, high, seed);
+}
+
 Mat mat_row(Mat m, size_t row) {
     return (Mat) {
         .rows = 1,
@@ -185,7 +230,6 @@ void mat_copy(Mat dst, Mat m) {
 }
 
 //MATRIX OPS
-
 
 //slow for now while i port and test the rest (around 15%ish of cuBLAS)
 __global__ void mat_dot_kernel(Mat dst, Mat a, Mat b) {
@@ -266,7 +310,7 @@ __global__ void mat_sig_contiguous_kernel(float* p, size_t area) {
     size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
     size_t stride = (size_t) gridDim.x * blockDim.x;
 
-    for (; i < area; i += stride) p[i] = sigmoidf(p[i]);
+    for (; i < area; i += stride) p[i] = __sigmoidf(p[i]);
 }
 
 void mat_sig_contiguous(Mat m) {
@@ -282,7 +326,7 @@ __global__ void mat_sig_noncontiguous_kernel(Mat m) {
     size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
     size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = sigmoidf(MAT_AT(m, i, j));
+    if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = __sigmoidf(MAT_AT(m, i, j));
 }
 
 void mat_sig_noncontiguous(Mat m) {
@@ -300,7 +344,7 @@ __global__ void mat_tanh_contiguous_kernel(float* p, size_t area) {
     size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
     size_t stride = (size_t) gridDim.x * blockDim.x;
 
-    for (; i < area; i += stride) p[i] = tanhf(p[i]);
+    for (; i < area; i += stride) p[i] = __tanhf(p[i]);
 }
 
 void mat_tanh_contiguous(Mat m) {
@@ -316,7 +360,7 @@ __global__ void mat_tanh_noncontiguous_kernel(Mat m) {
     size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
     size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = tanhf(MAT_AT(m, i, j));
+    if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = __tanhf(MAT_AT(m, i, j));
 }
 
 void mat_tanh_noncontiguous(Mat m) {
@@ -334,7 +378,7 @@ __global__ void mat_relu_contiguous_kernel(float* p, size_t area) {
     size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
     size_t stride = (size_t) gridDim.x * blockDim.x;
 
-    for (; i < area; i += stride) p[i] = reluf(p[i]);
+    for (; i < area; i += stride) p[i] = __reluf(p[i]);
 }
 
 void mat_relu_contiguous(Mat m) {
@@ -350,7 +394,7 @@ __global__ void mat_relu_noncontiguous_kernel(Mat m) {
     size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
     size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = reluf(MAT_AT(m, i, j));
+    if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = __reluf(MAT_AT(m, i, j));
 }
 
 void mat_relu_noncontiguous(Mat m) {
