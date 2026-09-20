@@ -36,16 +36,19 @@ void mat_fill(Mat m, float n);
 Mat mat_row(Mat m, size_t row);
 
 __global__ void mat_copy_contiguous_kernel(float* dst, const float* src, size_t area);
-void mat_copy_contiguous(float* dst, const float* src, size_t area);
+void mat_copy_contiguous(Mat dst, Mat m);
 __global__ void mat_copy_noncontiguous_kernel(Mat dst, Mat m);
-void mat_fill_noncontiguous(Mat dst, Mat m);
+void mat_copy_noncontiguous(Mat dst, Mat m);
 void mat_copy(Mat dst, Mat m);
 
 __global__ void mat_dot_kernel(Mat dst, Mat a, Mat b);
 void mat_dot(Mat dst, Mat a, Mat b);
 
-__global__ void mat_sum_kernel(Mat dst, Mat a);
-void mat_sum(Mat dst, Mat a);
+__global__ void mat_sum_contiguous_kernel(float* dst, const float* src, size_t area);
+void mat_sum_contiguous(float* dst, const float* src, size_t area);
+__global__ void mat_sum_noncontiguous_kernel(Mat dst, Mat m);
+void mat_sum_noncontiguous(Mat dst, Mat m);
+void mat_sum(Mat dst, Mat m);
 
 __global__ void mat_sig_kernel(Mat m);
 void mat_sig(Mat m);
@@ -172,27 +175,45 @@ void mat_copy(Mat dst, Mat m) {
 
 //MATRIX OPS
 
+__global__ void mat_dot_kernel(Mat dst, Mat a, Mat b) {}
 
-__global__ void mat_dot_kernel(Mat dst, Mat a, Mat b) {
+void mat_dot(Mat dst, Mat a, Mat b) {}
+
+__global__ void mat_sum_contiguous_kernel(float* dst, const float* src, size_t area) {
+    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t stride = (size_t) gridDim.x * blockDim.x;
+
+    for (; i < area; i += stride) dst[i] += src[i];
 }
 
-void mat_dot(Mat dst, Mat a, Mat b) {
+void mat_sum_contiguous(Mat dst, Mat m) {
+    unsigned int threads = 256;
+    size_t area = (size_t) m.rows * m.cols;
+    unsigned int blocks = (unsigned int) ((area + threads - 1) / threads);
 
+    mat_sum_contiguous_kernel<<<blocks, threads>>>(dst.es, m.es, area);
+    CUDA_CHECK(cudaGetLastError());
 }
 
-__global__ void mat_sum_kernel(Mat dst, Mat a) {
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
-    MAT_AT(dst, tx, ty) += MAT_AT(a, tx, ty);
+__global__ void mat_sum_noncontiguous_kernel(Mat dst, Mat m) {
+    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
+    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i < m.rows && j < m.cols) MAT_AT(dst, i, j) += MAT_AT(m, i, j);
 }
 
-void mat_sum(Mat dst, Mat a) {
-    GNN_ASSERT(dst.rows == a.rows);
-    GNN_ASSERT(dst.cols == a.cols);
+void mat_sum_noncontiguous(Mat dst, Mat m) {
+    dim3 threads(32, 8);
+    dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
+    mat_sum_noncontiguous_kernel<<<blocks, threads>>>(dst, m);
+    CUDA_CHECK(cudaGetLastError());
+}
 
-    dim3 dimGrid(1, 1);
-    dim3 dimBlock(dst.rows, dst.cols);
-    mat_sum_kernel<<<dimGrid, dimBlock>>>(dst, a);
+void mat_sum(Mat dst, Mat m) {
+    GNN_ASSERT(dst.rows == m.rows);
+    GNN_ASSERT(dst.cols == m.cols);
+
+    (m.stride == m.cols && dst.stride == dst.cols) ? mat_sum_contiguous(dst, m) : mat_sum_noncontiguous(dst, m);
 }
 
 //ACTIVATIONS
