@@ -120,6 +120,7 @@ void mat_fill_noncontiguous(Mat m, float n) {
     dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
 
     mat_fill_noncontiguous_kernel<<<blocks, threads>>>(m, n);
+    CUDA_CHECK(cudaGetLastError());
 }
 
 void mat_fill(Mat m, float n) {
@@ -162,6 +163,7 @@ void mat_copy_noncontiguous(Mat dst, Mat m) {
     dim3 threads(32, 8);
     dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
     mat_copy_noncontiguous_kernel<<<blocks, threads>>>(dst, m);
+    CUDA_CHECK(cudaGetLastError());
 }
 
 void mat_copy(Mat dst, Mat m) {
@@ -170,9 +172,8 @@ void mat_copy(Mat dst, Mat m) {
 
 //MATRIX OPS
 
-//USE WARPTILING (whatever that is)
-__global__ void mat_dot_kernel(Mat dst, Mat a, Mat b) {
 
+__global__ void mat_dot_kernel(Mat dst, Mat a, Mat b) {
 }
 
 void mat_dot(Mat dst, Mat a, Mat b) {
