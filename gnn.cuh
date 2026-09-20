@@ -16,6 +16,8 @@ typedef struct {
     float *es;
 } Mat;
 
+//TILE * TILE <= 1024 (32 max)
+#define TILE 32
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #define MAT_AT(m, i, j) (m).es[(i)*(m).stride + (j)]
 #define VEC_AT(v, i, j) (v)[(i)*(m).stride + (j)]
@@ -184,9 +186,42 @@ void mat_copy(Mat dst, Mat m) {
 
 //MATRIX OPS
 
-__global__ void mat_dot_kernel(Mat dst, Mat a, Mat b) {}
 
-void mat_dot(Mat dst, Mat a, Mat b) {}
+//slow for now while i port and test the rest (around 15%ish of cuBLAS)
+__global__ void mat_dot_kernel(Mat dst, Mat a, Mat b) {
+    __shared__ float As[TILE][TILE];
+    __shared__ float Bs[TILE][TILE];
+
+    size_t i = (size_t) blockIdx.y * TILE + threadIdx.y;
+    size_t j = (size_t) blockIdx.x * TILE + threadIdx.x;
+    float res = 0;
+
+    for (size_t t = 0; t < a.cols; t += TILE) {
+        size_t a_col = t + threadIdx.x;
+        size_t b_row = t + threadIdx.y;
+        As[threadIdx.y][threadIdx.x] = (i < a.rows && a_col < a.cols) ? a.es[i * a.cols + a_col] : 0;
+        Bs[threadIdx.y][threadIdx.x] = (b_row < a.cols && j < b.cols) ? b.es[b_row * b.cols + j] : 0;
+        __syncthreads();
+
+        for (int k = 0; k < TILE; ++k)
+            res += As[threadIdx.y][k] * Bs[k][threadIdx.x];
+        __syncthreads();
+    }
+
+    if (i < a.rows && j < b.cols) dst.es[i * b.cols + j] = res;
+}
+
+void mat_dot(Mat dst, Mat a, Mat b) {
+    GNN_ASSERT(a.cols == b.rows);
+    GNN_ASSERT(dst.rows == a.rows);
+    GNN_ASSERT(dst.cols == b.cols);
+
+    dim3 threads(TILE, TILE);
+    dim3 blocks((unsigned int) ((b.cols + TILE - 1) / TILE),
+                (unsigned int) ((a.rows + TILE - 1) / TILE));
+
+    mat_dot_kernel<<<blocks, threads>>>(dst, a, b);
+}
 
 __global__ void mat_sum_contiguous_kernel(float* dst, const float* src, size_t area) {
     size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
