@@ -4,7 +4,7 @@
 int main() {
     Mat m = mat_alloc(3, 3);
     mat_fill(m, 2);
-    mat_sig(m);
+    mat_relu(m);
     // Mat b = mat_alloc(3, 3);
     // mat_fill(b, 2);
     // mat_sum(b, m);

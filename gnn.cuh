@@ -261,17 +261,73 @@ void mat_sig(Mat m) {
     (m.stride == m.cols) ? mat_sig_contiguous(m) : mat_sig_noncontiguous(m);
 }
 
-__global__ void mat_tanh_contiguous_kernel(float* p, size_t area);
-void mat_tanh_contiguous(Mat m);
-__global__ void mat_tanh_noncontiguous_kernel(Mat m);
-void mat_tanh_noncontiguous(Mat m);
-void mat_tanh(Mat m);
+__global__ void mat_tanh_contiguous_kernel(float* p, size_t area) {
+    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t stride = (size_t) gridDim.x * blockDim.x;
 
-__global__ void mat_relu_contiguous_kernel(float* p, size_t area);
-void mat_relu_contiguous(Mat m);
-__global__ void mat_relu_noncontiguous_kernel(Mat m);
-void mat_relu_noncontiguous(Mat m);
-void mat_relu(Mat m);
+    for (; i < area; i += stride) p[i] = tanhf(p[i]);
+}
+
+void mat_tanh_contiguous(Mat m) {
+    unsigned int threads = 256;
+    size_t area = (size_t) m.rows * m.cols;
+    unsigned int blocks = (unsigned int) ((area + threads - 1) / threads);
+
+    mat_tanh_contiguous_kernel<<<blocks, threads>>>(m.es, area);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+__global__ void mat_tanh_noncontiguous_kernel(Mat m) {
+    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
+    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = tanhf(MAT_AT(m, i, j));
+}
+
+void mat_tanh_noncontiguous(Mat m) {
+    dim3 threads(32, 8);
+    dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
+    mat_tanh_noncontiguous_kernel<<<blocks, threads>>>(m);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+void mat_tanh(Mat m) {
+    (m.stride == m.cols) ? mat_tanh_contiguous(m) : mat_tanh_noncontiguous(m);
+}
+
+__global__ void mat_relu_contiguous_kernel(float* p, size_t area) {
+    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t stride = (size_t) gridDim.x * blockDim.x;
+
+    for (; i < area; i += stride) p[i] = reluf(p[i]);
+}
+
+void mat_relu_contiguous(Mat m) {
+    unsigned int threads = 256;
+    size_t area = (size_t) m.rows * m.cols;
+    unsigned int blocks = (unsigned int) ((area + threads - 1) / threads);
+
+    mat_relu_contiguous_kernel<<<blocks, threads>>>(m.es, area);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+__global__ void mat_relu_noncontiguous_kernel(Mat m) {
+    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
+    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = reluf(MAT_AT(m, i, j));
+}
+
+void mat_relu_noncontiguous(Mat m) {
+    dim3 threads(32, 8);
+    dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
+    mat_relu_noncontiguous_kernel<<<blocks, threads>>>(m);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+void mat_relu(Mat m) {
+    (m.stride == m.cols) ? mat_relu_contiguous(m) : mat_relu_noncontiguous(m);
+}
 
 void mat_print(Mat m, const char *name) {
     float* host_es = (float*)malloc(m.rows * m.stride * sizeof(float));
