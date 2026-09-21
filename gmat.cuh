@@ -439,7 +439,7 @@ void mat_relu(Mat m) {
 
 void mat_print(Mat m, const char *name) {
     float* host_es = (float*)malloc(m.rows * m.stride * sizeof(float));
-    cudaMemcpy(host_es, m.es, m.rows * m.stride * sizeof(float), cudaMemcpyDeviceToHost);
+    CUDA_CHECK(cudaMemcpy(host_es, m.es, m.rows * m.stride * sizeof(float), cudaMemcpyDeviceToHost));
 
     printf("%s\n", name);
     for (size_t i = 0; i < m.rows; ++i) {

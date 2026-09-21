@@ -40,39 +40,46 @@ NN nn_alloc(size_t* dim, size_t dim_len) {
     size_t sizeof_wb = sizeof(Mat) * nn.count;
     size_t sizeof_a = sizeof(Mat) * (nn.count + 1);
 
-    Mat* w = (Mat*) malloc(sizeof_wb);
-    Mat* b = (Mat*) malloc(sizeof_wb);
-    Mat* a = (Mat*) malloc(sizeof_a);
-    GNN_ASSERT(w && b && a);
+    Mat* hw = (Mat*) malloc(sizeof_wb);
+    Mat* hb = (Mat*) malloc(sizeof_wb);
+    Mat* ha = (Mat*) malloc(sizeof_a);
+    GNN_ASSERT(hw && hb && ha);
 
-    a[0] = mat_alloc(1, dim[0]);
+    ha[0] = mat_alloc(1, dim[0]);
     for (size_t i = 1; i < dim_len; ++i) {
-        w[i - 1] = mat_alloc(dim[i - 1], dim[i]);
-        b[i - 1] = mat_alloc(1, dim[i]);
-        a[i] = mat_alloc(1, dim[i]);
+        hw[i - 1] = mat_alloc(dim[i - 1], dim[i]);
+        hb[i - 1] = mat_alloc(1, dim[i]);
+        ha[i] = mat_alloc(1, dim[i]);
     }
 
     CUDA_CHECK(cudaMalloc((void**)&nn.w, sizeof_wb));
-    CUDA_CHECK(cudaMemcpy(nn.w, w, sizeof_wb, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(nn.w, hw, sizeof_wb, cudaMemcpyHostToDevice));
 
     CUDA_CHECK(cudaMalloc((void**)&nn.b, sizeof_wb));
-    CUDA_CHECK(cudaMemcpy(nn.b, b, sizeof_wb, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(nn.b, hb, sizeof_wb, cudaMemcpyHostToDevice));
 
     CUDA_CHECK(cudaMalloc((void**)&nn.a, sizeof_a));
-    CUDA_CHECK(cudaMemcpy(nn.a, a, sizeof_a, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(nn.a, ha, sizeof_a, cudaMemcpyHostToDevice));
 
-    free(w);
-    free(b);
-    free(a);
+    free(hw);
+    free(hb);
+    free(ha);
 
     return nn;
 }
 
 void nn_print(NN nn, const char* name) {
+    size_t sizeof_wb = sizeof(Mat) * nn.count;
+    Mat* hw = (Mat*) malloc(sizeof_wb);
+    Mat* hb = (Mat*) malloc(sizeof_wb);
+
+    CUDA_CHECK(cudaMemcpy(hw, nn.w, sizeof_wb, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(hb, nn.b, sizeof_wb, cudaMemcpyDeviceToHost));
+
     printf("%s\n", name);
     for (size_t i = 0; i < nn.count; ++i) {
-        mat_print(nn.w[i], "w");
-        mat_print(nn.b[i], "b");
+        mat_print(hw[i], "w");
+        mat_print(hb[i], "b");
     }
     printf("\n");
 }
