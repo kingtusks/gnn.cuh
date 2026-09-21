@@ -31,6 +31,7 @@ typedef struct {
 NN nn_alloc(size_t* dim, size_t dim_len);
 void nn_rand(NN nn, float low, float high);
 void nn_fill(NN nn, float n);
+float nn_cost(NN nn, Mat ti, Mat to);
 void nn_print(NN nn, const char* name);
 
 #ifdef GNN_IMPLEMENTATION
@@ -108,6 +109,30 @@ void nn_fill(NN nn, float n) {
         mat_fill(ha[i], n);
     }
     mat_fill(ha[nn.count], n);
+
+    free(hw);
+    free(hb);
+    free(ha);
+}
+
+void nn_forward(NN nn) {
+    size_t sizeof_wb = sizeof(Mat) * nn.count;
+    size_t sizeof_a = sizeof(Mat) * (nn.count + 1);
+
+    Mat* hw = (Mat*) malloc(sizeof_wb);
+    Mat* hb = (Mat*) malloc(sizeof_wb);
+    Mat* ha = (Mat*) malloc(sizeof_a);
+    GNN_ASSERT(hw && hb && ha);
+
+    CUDA_CHECK(cudaMemcpy(hw, nn.w, sizeof_wb, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(hb, nn.b, sizeof_wb, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(ha, nn.a, sizeof_a, cudaMemcpyDeviceToHost));
+
+    for (size_t i = 0; i < nn.count; ++i) {
+        mat_dot(ha[i + 1], ha[i], hw[i]);
+        mat_sum(ha[i + 1], hb[i]);
+        mat_sig(ha[i + 1]);
+    }
 
     free(hw);
     free(hb);
