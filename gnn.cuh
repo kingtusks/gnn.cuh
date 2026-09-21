@@ -29,6 +29,8 @@ typedef struct {
 #define NN_PRINT(nn) nn_print(nn, #nn)
 
 NN nn_alloc(size_t* dim, size_t dim_len);
+void nn_rand(NN nn, float low, float high);
+void nn_fill(NN nn, float n);
 void nn_print(NN nn, const char* name);
 
 #ifdef GNN_IMPLEMENTATION
@@ -68,10 +70,55 @@ NN nn_alloc(size_t* dim, size_t dim_len) {
     return nn;
 }
 
+void nn_rand(NN nn, float low, float high) {
+    size_t sizeof_wb = sizeof(Mat) * nn.count;
+
+    Mat* hw = (Mat*) malloc(sizeof_wb);
+    Mat* hb = (Mat*) malloc(sizeof_wb);
+    GNN_ASSERT(hw && hb);
+
+    CUDA_CHECK(cudaMemcpy(hw, nn.w, sizeof_wb, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(hb, nn.b, sizeof_wb, cudaMemcpyDeviceToHost));
+
+    for (size_t i = 0; i < nn.count; ++i) {
+        mat_rand(hw[i], low, high);
+        mat_rand(hb[i], low, high);
+    }
+
+    free(hw);
+    free(hb);
+}
+
+void nn_fill(NN nn, float n) {
+    size_t sizeof_wb = sizeof(Mat) * nn.count;
+    size_t sizeof_a = sizeof(Mat) * (nn.count + 1);
+
+    Mat* hw = (Mat*) malloc(sizeof_wb);
+    Mat* hb = (Mat*) malloc(sizeof_wb);
+    Mat* ha = (Mat*) malloc(sizeof_a);
+    GNN_ASSERT(hw && hb && ha);
+
+    CUDA_CHECK(cudaMemcpy(hw, nn.w, sizeof_wb, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(hb, nn.b, sizeof_wb, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(ha, nn.a, sizeof_a, cudaMemcpyDeviceToHost));
+
+    for (size_t i = 0; i < nn.count; ++i) {
+        mat_fill(hw[i], n);
+        mat_fill(hb[i], n);
+        mat_fill(ha[i], n);
+    }
+    mat_fill(ha[nn.count], n);
+
+    free(hw);
+    free(hb);
+    free(ha);
+}
+
 void nn_print(NN nn, const char* name) {
     size_t sizeof_wb = sizeof(Mat) * nn.count;
     Mat* hw = (Mat*) malloc(sizeof_wb);
     Mat* hb = (Mat*) malloc(sizeof_wb);
+    GNN_ASSERT(hw && hb);
 
     CUDA_CHECK(cudaMemcpy(hw, nn.w, sizeof_wb, cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(hb, nn.b, sizeof_wb, cudaMemcpyDeviceToHost));
@@ -82,6 +129,9 @@ void nn_print(NN nn, const char* name) {
         mat_print(hb[i], "b");
     }
     printf("\n");
+
+    free(hw);
+    free(hb);
 }
 
 #endif //GNN_IMPLEMENTATION

@@ -8,6 +8,7 @@ int main() {
 
     size_t dim[] = {2, 2, 1};
     NN nn = nn_alloc(dim, 3);
+    nn_fill(nn, 45);
     NN_PRINT(nn);
     return 0;
 }
