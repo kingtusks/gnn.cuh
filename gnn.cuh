@@ -31,7 +31,7 @@ typedef struct {
 NN nn_alloc(size_t* dim, size_t dim_len);
 void nn_rand(NN nn, float low, float high);
 void nn_fill(NN nn, float n);
-float nn_cost(NN nn, Mat ti, Mat to);
+void nn_forward(NN nn);
 void nn_print(NN nn, const char* name);
 
 #ifdef GNN_IMPLEMENTATION
