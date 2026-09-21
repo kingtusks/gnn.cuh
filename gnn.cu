@@ -2,14 +2,12 @@
 #include "gnn.cuh"
 
 int main() {
-    Mat dst = mat_alloc(2, 2);
-    Mat a = mat_alloc(2, 3);
-    mat_fill(a, 2);
-    Mat b = mat_alloc(3, 2);
-    mat_fill(b, 2);
-    mat_dot(dst, a, b);
+    // Mat m = mat_alloc(3, 3);
+    // mat_rand(m, 5, 10);
+    // MAT_PRINT(m);
 
-    MAT_PRINT(dst);
-
+    size_t dim[] = {2, 2, 1};
+    NN nn = nn_alloc(dim, 3);
+    // NN_PRINT(nn);
     return 0;
 }
