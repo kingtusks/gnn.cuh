@@ -32,6 +32,8 @@ NN nn_alloc(size_t* dim, size_t dim_len);
 void nn_rand(NN nn, float low, float high);
 void nn_fill(NN nn, float n);
 void nn_forward(NN nn);
+__global__ void nn_cost_kernel(NN nn, Mat ti, Mat to);
+float nn_cost(NN nn, Mat ti, Mat to);
 void nn_print(NN nn, const char* name);
 
 #ifdef GNN_IMPLEMENTATION
@@ -137,6 +139,69 @@ void nn_forward(NN nn) {
     free(hw);
     free(hb);
     free(ha);
+}
+
+__global__ void nn_cost_kernel(Mat out, Mat y, float* dc) {
+    extern __shared__ float sd[];
+    size_t tx = threadIdx.x;
+    size_t idx = (size_t) blockIdx.x * blockDim.x + tx;
+    size_t area = out.rows * out.cols;
+
+    float v = 0;
+    if (idx < area) {
+        size_t i = idx / out.cols;
+        size_t j = idx % out.cols;
+        float d = MAT_AT(out, i, j) - MAT_AT(y, i, j);
+        v += d*d;
+    }
+
+    sd[tx] = v;
+    __syncthreads();
+
+    for (size_t s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (s > tx) sd[tx] += sd[tx + s];
+        __syncthreads();
+    }
+
+    if (tx == 0) 
+        dc[blockIdx.x] = sd[0];
+}
+
+float nn_cost(NN nn, Mat ti, Mat to) {
+    GNN_ASSERT(ti.rows == to.rows);
+    size_t sizeof_a = sizeof(Mat) * (nn.count + 1);
+    Mat* ha = (Mat*) malloc(sizeof_a);
+    GNN_ASSERT(ha);
+    CUDA_CHECK(cudaMemcpy(ha, nn.a, sizeof_a, cudaMemcpyDeviceToHost));
+    GNN_ASSERT(to.cols == ha[nn.count].cols);
+    size_t n = ti.rows;
+
+    mat_copy(ha[0], ti);
+    nn_forward(nn);
+    Mat out = ha[nn.count];
+
+    size_t area = (size_t) out.rows * out.cols;
+    unsigned int threads = 256;
+    unsigned int blocks = (unsigned int) ((area + threads - 1) / threads);
+
+    float* dc;
+    size_t sizeof_c = blocks * sizeof(float);
+    CUDA_CHECK(cudaMalloc((void**)&dc, sizeof_c));
+
+    nn_cost_kernel<<<blocks, threads, threads * sizeof(float)>>>(out, to, dc);
+    CUDA_CHECK(cudaGetLastError());
+
+    float* hc = (float*) malloc(sizeof_c);
+    CUDA_CHECK(cudaMemcpy(hc, dc, sizeof_c, cudaMemcpyDeviceToHost));
+
+    float c = 0;
+    for (unsigned int i = 0; i < blocks; ++i)
+        c += hc[i];
+
+    free(hc);
+    CUDA_CHECK(cudaFree(dc));
+
+    return c / n;
 }
 
 void nn_print(NN nn, const char* name) {

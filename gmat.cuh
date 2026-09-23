@@ -28,10 +28,11 @@ typedef struct {
 #define VEC_AT(v, i, j) (v)[(i)*(m).stride + (j)]
 #define MAT_PRINT(m) mat_print(m, #m)
 
-void cuda_check(cudaError_t err, const char* file, int line);
+__host__ __device__ void cuda_check(cudaError_t err, const char* file, int line);
 #define CUDA_CHECK(call) cuda_check(call, __FILE__, __LINE__)
 
 Mat mat_alloc(size_t rows, size_t cols);
+Mat mat_alloc_from(size_t rows, size_t cols, size_t stride, const float* h_es);
 
 __global__ void mat_fill_contiguous_kernel(float* p, float n, size_t area);
 void mat_fill_contiguous(Mat m, float n);
@@ -46,28 +47,28 @@ __global__ void mat_rand_noncontiguous_kernel(Mat m, float low, float high, uint
 void mat_rand_noncontiguous(Mat m, float low, float high, uint64_t seed);
 void mat_rand(Mat m, float low, float high);
 
-Mat mat_row(Mat m, size_t row);
+__host__ __device__ Mat mat_row(Mat m, size_t row);
 
 __global__ void mat_copy_contiguous_kernel(float* dst, const float* src, size_t area);
-void mat_copy_contiguous(Mat dst, Mat m);
+__host__ __device__ void mat_copy_contiguous(Mat dst, Mat m);
 __global__ void mat_copy_noncontiguous_kernel(Mat dst, Mat m);
-void mat_copy_noncontiguous(Mat dst, Mat m);
-void mat_copy(Mat dst, Mat m);
+__host__ __device__ void mat_copy_noncontiguous(Mat dst, Mat m);
+__host__ __device__ void mat_copy(Mat dst, Mat m);
 
 __global__ void mat_dot_kernel(Mat dst, Mat a, Mat b);
-void mat_dot(Mat dst, Mat a, Mat b);
+__host__ __device__ void mat_dot(Mat dst, Mat a, Mat b);
 
 __global__ void mat_sum_contiguous_kernel(float* dst, const float* src, size_t area);
-void mat_sum_contiguous(Mat dst, Mat m);
+__host__ __device__ void mat_sum_contiguous(Mat dst, Mat m);
 __global__ void mat_sum_noncontiguous_kernel(Mat dst, Mat m);
-void mat_sum_noncontiguous(Mat dst, Mat m);
-void mat_sum(Mat dst, Mat m);
+__host__ __device__ void mat_sum_noncontiguous(Mat dst, Mat m);
+__host__ __device__ void mat_sum(Mat dst, Mat m);
 
 __global__ void mat_sig_contiguous_kernel(float* p, size_t area);
-void mat_sig_contiguous(Mat m);
+__host__ __device__ void mat_sig_contiguous(Mat m);
 __global__ void mat_sig_noncontiguous_kernel(Mat m);
-void mat_sig_noncontiguous(Mat m);
-void mat_sig(Mat m);
+__host__ __device__ void mat_sig_noncontiguous(Mat m);
+__host__ __device__ void mat_sig(Mat m);
 
 __global__ void mat_tanh_contiguous_kernel(float* p, size_t area);
 void mat_tanh_contiguous(Mat m);
@@ -111,11 +112,18 @@ __device__ __forceinline__ float rand_float(uint64_t seed, uint64_t i) {
 
 //CUDA CHECK
 
-void cuda_check(cudaError_t err, const char* file, int line) {
+__host__ __device__ void cuda_check(cudaError_t err, const char* file, int line) {
+#ifdef __CUDA_ARCH__
     if (err != cudaSuccess) {
-        fprintf(stderr, "%s:%d CUDA Error: %s\n", file, line, cudaGetErrorString(err));
+        printf("%s:%d CUDA Error: %s\n", file, line, cudaGetErrorString(err));
+        __trap();
+    }
+#else
+    if (err != cudaSuccess) {
+        printf("%s:%d CUDA Error: %s\n", file, line, cudaGetErrorString(err));
         exit(EXIT_FAILURE);
     }
+#endif
 }
 
 //GENERAL PURPOSE
@@ -129,11 +137,22 @@ Mat mat_alloc(size_t rows, size_t cols) {
     return m;
 }
 
+Mat mat_alloc_from(size_t rows, size_t cols, size_t stride, const float* h_es) {
+    Mat m = mat_alloc(rows, cols);
+    CUDA_CHECK(cudaMemcpy2D(
+                m.es, m.stride * sizeof(float),
+                h_es, stride * sizeof(float),
+                cols * sizeof(float),
+                rows, cudaMemcpyHostToDevice));
+    return m;
+}
+
 __global__ void mat_fill_contiguous_kernel(float* p, float n, size_t area) {
     size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
     size_t stride = (size_t) gridDim.x * blockDim.x;
 
-    for (; i < area; i += stride) p[i] = n;
+    for (; i < area; i += stride)
+        p[i] = n;
 }
 
 void mat_fill_contiguous(Mat m, float n) {
@@ -215,7 +234,7 @@ void mat_rand(Mat m, float low, float high) {
     (m.stride == m.cols) ? mat_rand_contiguous(m, low, high, seed) : mat_rand_noncontiguous(m, low, high, seed);
 }
 
-Mat mat_row(Mat m, size_t row) {
+__host__ __device__ Mat mat_row(Mat m, size_t row) {
     return (Mat) {
         .rows = 1,
         .cols = m.cols,
@@ -231,7 +250,7 @@ __global__ void mat_copy_contiguous_kernel(float* dst, const float* src, size_t 
     for (; i < area; i += stride) dst[i] = src[i];
 }
 
-void mat_copy_contiguous(Mat dst, Mat m) {
+__host__ __device__ void mat_copy_contiguous(Mat dst, Mat m) {
     unsigned int threads = 256;
     size_t area = (size_t) m.rows * m.cols;
     unsigned int blocks = (unsigned int) ((area + threads - 1) / threads);
@@ -247,14 +266,14 @@ __global__ void mat_copy_noncontiguous_kernel(Mat dst, Mat m) {
     if (i < m.rows && j < m.cols) MAT_AT(dst, i, j) = MAT_AT(m, i, j);
 }
 
-void mat_copy_noncontiguous(Mat dst, Mat m) {
+__host__ __device__ void mat_copy_noncontiguous(Mat dst, Mat m) {
     dim3 threads(32, 8);
     dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
     mat_copy_noncontiguous_kernel<<<blocks, threads>>>(dst, m);
     CUDA_CHECK(cudaGetLastError());
 }
 
-void mat_copy(Mat dst, Mat m) {
+__host__ __device__ void mat_copy(Mat dst, Mat m) {
     (m.stride == m.cols && dst.stride == dst.cols) ? mat_copy_contiguous(dst, m) : mat_copy_noncontiguous(dst, m);
 }
 
