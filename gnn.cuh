@@ -35,6 +35,7 @@ void nn_forward(NN nn);
 __global__ void nn_cost_kernel(Mat out, Mat y, float* dc);
 float nn_cost(NN nn, Mat ti, Mat to);
 void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps);
+void nn_backprop(NN nn, NN g, Mat ti, Mat to);
 void nn_print(NN nn, const char* name);
 
 #ifdef GNN_IMPLEMENTATION
@@ -238,6 +239,64 @@ void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps) {
                 MAT_AT(hgb[i], j, k) = (nn_cost(nn, ti, to) - c) / eps;
                 MAT_AT(hb[i], j, k) = saved;
             }
+        }
+    }
+}
+
+void nn_backprop(NN nn, NN g, Mat ti, Mat to) {
+    GNN_ASSERT(ti.rows == to.rows);
+    size_t sizeof_wb = sizeof(Mat) * nn.count;
+    size_t sizeof_a = sizeof(Mat) * (nn.count + 1);
+
+    Mat* ha = (Mat*) malloc(sizeof_a);
+    Mat* hw = (Mat*) malloc(sizeof_wb);
+    Mat* hga = (Mat*) malloc(sizeof_a);
+    Mat* hgw = (Mat*) malloc(sizeof_wb);
+    Mat* hgb = (Mat*) malloc(sizeof_wb);
+
+    GNN_ASSERT(ha && hw && hga && hgw && hgb);
+    GNN_ASSERT(ha[nn.count].cols == to.cols);
+
+    CUDA_CHECK(cudaMemcpy(ha, nn.a, sizeof_a, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(hw, nn.w, sizeof_wb, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(hga, g.a, sizeof_a, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(hgw, g.w, sizeof_wb, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(hgb, g.b, sizeof_wb, cudaMemcpyDeviceToHost));
+
+    size_t n = ti.rows;
+    nn_fill(g, 0);
+    for (size_t i = 0; i < n; ++i) {
+        mat_copy(ha[0], mat_row(ti, i));
+        nn_forward(nn);
+
+        for (size_t j = 0; j <= nn.count; ++j)
+            mat_fill(hga[j], 0);
+        for (size_t j = 0; j < to.cols; ++j)
+            MAT_AT(hga[g.count], 0, j) = MAT_AT(ha[nn.count], 0, j) - MAT_AT(to, i, j);
+
+        for (size_t l = nn.count; l > 0; --l) {
+            for (size_t j = 0; j < ha[l].cols; ++j) {
+                float a = MAT_AT(ha[l], 0, j);
+                float da = MAT_AT(hga[l], 0, j);
+                MAT_AT(hgb[l - 1], 0, j) += 2 * da * a * (1 - a);
+                for (size_t k = 0; k < ha[l - 1].cols; ++k) {
+                    float pa = MAT_AT(ha[l - 1], 0, k);
+                    float w = MAT_AT(hw[l - 1], k, j);
+                    MAT_AT(hgw[l - 1], k, j) += 2 * da * a * (1 - a) * pa;
+                    MAT_AT(hga[l - 1], 0, k) += 2 * da * a * (1 - a) * w;
+                }
+            }
+        }
+    }
+
+    for (size_t i = 0; i < g.count; ++i) {
+        for (size_t j = 0; j < hgw[i].rows; ++j) {
+            for (size_t k = 0; k < hgw[i].cols; ++k)
+                MAT_AT(hgw[i], j, k) /= n;
+        }
+        for (size_t j = 0; j < hgb[i].rows; ++j) {
+            for (size_t k = 0; k < hgb[i].cols; ++k)
+                MAT_AT(hgb[i], j, k) /= n;
         }
     }
 }
