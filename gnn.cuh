@@ -36,6 +36,7 @@ __global__ void nn_cost_kernel(Mat out, Mat y, float* dc);
 float nn_cost(NN nn, Mat ti, Mat to);
 void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps);
 void nn_backprop(NN nn, NN g, Mat ti, Mat to);
+void nn_learn(NN nn, NN g, float rate);
 void nn_print(NN nn, const char* name);
 
 #ifdef GNN_IMPLEMENTATION
@@ -299,6 +300,37 @@ void nn_backprop(NN nn, NN g, Mat ti, Mat to) {
                 MAT_AT(hgb[i], j, k) /= n;
         }
     }
+}
+
+__global__ void nn_learn_kernel(NN nn, NN g, float rate) {
+    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t j = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
+    size_t k = (size_t) blockIdx.z * blockDim.z + threadIdx.z;
+
+    if (i >= nn.count) return;
+
+    if (j < nn.w[i].rows && k < nn.w[i].cols)
+        MAT_AT(nn.w[i], j, k) -= rate * MAT_AT(g.w[i], j, k);
+
+    if (j < nn.b[i].rows && k < nn.b[i].cols)
+        MAT_AT(nn.b[i], j, k) -= rate * MAT_AT(g.b[i], j, k);
+}
+
+void nn_learn(NN nn, NN g, float rate) {
+    Mat* hw_0 = (Mat*) malloc(sizeof(Mat));
+    GNN_ASSERT(hw_0);
+    CUDA_CHECK(cudaMemcpy(hw_0, nn.w[0], sizeof(Mat), cudaMemcpyDeviceToHost));
+
+    dim3 threads(8, 8, 8);
+    dim3 blocks(
+        (nn.count + threads.x - 1) / threads.x,
+        (hw_0->rows + threads.y - 1) / threads.y,
+        (hw_0->cols + threads.z - 1) / threads.z
+    );
+
+    free(hw_0);
+    nn_learn_kernel<<<blocks, threads>>>(nn, g, rate);
+    CUDA_CHECK(cudaGetLastError());
 }
 
 void nn_print(NN nn, const char* name) {
