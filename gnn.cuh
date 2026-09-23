@@ -37,6 +37,7 @@ float nn_cost(NN nn, Mat ti, Mat to);
 void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps);
 void nn_backprop(NN nn, NN g, Mat ti, Mat to);
 void nn_learn(NN nn, NN g, float rate);
+void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t iter);
 void nn_print(NN nn, const char* name);
 
 #ifdef GNN_IMPLEMENTATION
@@ -331,6 +332,14 @@ void nn_learn(NN nn, NN g, float rate) {
     free(hw_0);
     nn_learn_kernel<<<blocks, threads>>>(nn, g, rate);
     CUDA_CHECK(cudaGetLastError());
+}
+
+void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t iter) {
+    for (size_t i = 0; i < iter; ++i) {
+        g = nn_backprop(nn, g, ti, to);
+        nn_learn(nn, g, rate);
+        printf("%zu: cost: %f", i, nn_cost(nn, ti, to));
+    }
 }
 
 void nn_print(NN nn, const char* name) {
