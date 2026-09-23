@@ -32,8 +32,9 @@ NN nn_alloc(size_t* dim, size_t dim_len);
 void nn_rand(NN nn, float low, float high);
 void nn_fill(NN nn, float n);
 void nn_forward(NN nn);
-__global__ void nn_cost_kernel(NN nn, Mat ti, Mat to);
+__global__ void nn_cost_kernel(Mat out, Mat y, float* dc);
 float nn_cost(NN nn, Mat ti, Mat to);
+void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps);
 void nn_print(NN nn, const char* name);
 
 #ifdef GNN_IMPLEMENTATION
@@ -202,6 +203,43 @@ float nn_cost(NN nn, Mat ti, Mat to) {
     CUDA_CHECK(cudaFree(dc));
 
     return c / n;
+}
+
+void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps) {
+    size_t sizeof_wb = sizeof(Mat) * nn.count;
+    Mat* hw = (Mat*) malloc(sizeof_wb);
+    Mat* hb = (Mat*) malloc(sizeof_wb);
+    Mat* hgw = (Mat*) malloc(sizeof_wb);
+    Mat* hgb = (Mat*) malloc(sizeof_wb);
+    GNN_ASSERT(hw && hb && hgw && hgb);
+
+    CUDA_CHECK(cudaMemcpy(hw, nn.w, sizeof_wb, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(hb, nn.b, sizeof_wb, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(hgw, g.w, sizeof_wb, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(hgb, g.b, sizeof_wb, cudaMemcpyDeviceToHost));
+
+    float saved;
+    float c = nn_cost(nn, ti, to);
+
+    for (size_t i = 0; i < nn.count; ++i) {
+        for (size_t j = 0; j < hw[i].rows; ++j) {
+            for (size_t k = 0; k < hw[i].cols; ++k) {
+                saved = MAT_AT(hw[i], j, k);
+                MAT_AT(hw[i], j, k) += eps;
+                MAT_AT(hgw[i], j, k) = (nn_cost(nn, ti, to) - c) / eps;
+                MAT_AT(hw[i], j, k) = saved;
+            }
+        }
+
+        for (size_t j = 0; j < hb[i].rows; ++j) {
+            for (size_t k = 0; k < hb[i].cols; ++k) {
+                saved = MAT_AT(hb[i], j, k);
+                MAT_AT(hb[i], j, k) += eps;
+                MAT_AT(hgb[i], j, k) = (nn_cost(nn, ti, to) - c) / eps;
+                MAT_AT(hb[i], j, k) = saved;
+            }
+        }
+    }
 }
 
 void nn_print(NN nn, const char* name) {
