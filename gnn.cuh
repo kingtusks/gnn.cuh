@@ -23,7 +23,7 @@ typedef struct {
     Mat *a;
 } NN;
 
-#define ARRAY_LEN(arr) sizeof((arr)) / sizeof((arr)[0])
+#define ARRAY_LEN(arr) (sizeof((arr)) / sizeof((arr)[0]))
 #define NN_INPUT(nn) (nn).a[0]
 #define NN_OUTPUT(nn) (nn).a[(nn).count]
 #define NN_PRINT(nn) nn_print(nn, #nn)
@@ -178,34 +178,34 @@ float nn_cost(NN nn, Mat ti, Mat to) {
     GNN_ASSERT(ha);
     CUDA_CHECK(cudaMemcpy(ha, nn.a, sizeof_a, cudaMemcpyDeviceToHost));
     GNN_ASSERT(to.cols == ha[nn.count].cols);
-    size_t n = ti.rows;
 
-    mat_copy(ha[0], ti);
-    nn_forward(nn);
     Mat out = ha[nn.count];
 
-    size_t area = (size_t) out.rows * out.cols;
     unsigned int threads = 256;
+    size_t area = (size_t) out.rows * out.cols;
     unsigned int blocks = (unsigned int) ((area + threads - 1) / threads);
 
-    float* dc;
     size_t sizeof_c = blocks * sizeof(float);
+    float* dc;
     CUDA_CHECK(cudaMalloc((void**)&dc, sizeof_c));
-
-    nn_cost_kernel<<<blocks, threads, threads * sizeof(float)>>>(out, to, dc);
-    CUDA_CHECK(cudaGetLastError());
-
     float* hc = (float*) malloc(sizeof_c);
-    CUDA_CHECK(cudaMemcpy(hc, dc, sizeof_c, cudaMemcpyDeviceToHost));
 
     float c = 0;
-    for (unsigned int i = 0; i < blocks; ++i)
-        c += hc[i];
+    for (size_t i = 0; i < ti.rows; ++i) {
+        mat_copy(ha[0], mat_row(ti, i));
+        nn_forward(nn);
+        nn_cost_kernel<<<blocks, threads, threads * sizeof(float)>>>(out, mat_row(to, i), dc);
+        CUDA_CHECK(cudaGetLastError());
+        CUDA_CHECK(cudaMemcpy(hc, dc, sizeof_c, cudaMemcpyDeviceToHost));
+        for (unsigned int b = 0; b < blocks; ++b)
+            c += hc[b];
+    }
 
+    free(ha);
     free(hc);
     CUDA_CHECK(cudaFree(dc));
 
-    return c / n;
+    return c / ti.rows;
 }
 
 void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps) {
@@ -243,6 +243,11 @@ void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps) {
             }
         }
     }
+
+    free(hw);
+    free(hb);
+    free(hgw);
+    free(hgb);
 }
 
 void nn_backprop(NN nn, NN g, Mat ti, Mat to) {
@@ -257,13 +262,12 @@ void nn_backprop(NN nn, NN g, Mat ti, Mat to) {
     Mat* hgb = (Mat*) malloc(sizeof_wb);
 
     GNN_ASSERT(ha && hw && hga && hgw && hgb);
-    GNN_ASSERT(ha[nn.count].cols == to.cols);
-
     CUDA_CHECK(cudaMemcpy(ha, nn.a, sizeof_a, cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(hw, nn.w, sizeof_wb, cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(hga, g.a, sizeof_a, cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(hgw, g.w, sizeof_wb, cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(hgb, g.b, sizeof_wb, cudaMemcpyDeviceToHost));
+    GNN_ASSERT(ha[nn.count].cols == to.cols);
 
     size_t n = ti.rows;
     nn_fill(g, 0);
@@ -301,6 +305,12 @@ void nn_backprop(NN nn, NN g, Mat ti, Mat to) {
                 MAT_AT(hgb[i], j, k) /= n;
         }
     }
+
+    free(ha);
+    free(hw);
+    free(hga);
+    free(hgw);
+    free(hgb);
 }
 
 __global__ void nn_learn_kernel(NN nn, NN g, float rate) {
@@ -318,27 +328,32 @@ __global__ void nn_learn_kernel(NN nn, NN g, float rate) {
 }
 
 void nn_learn(NN nn, NN g, float rate) {
-    Mat* hw_0 = (Mat*) malloc(sizeof(Mat));
-    GNN_ASSERT(hw_0);
-    CUDA_CHECK(cudaMemcpy(hw_0, nn.w[0], sizeof(Mat), cudaMemcpyDeviceToHost));
+    size_t sizeof_wb = sizeof(Mat) * nn.count;
+    Mat* hw = (Mat*) malloc(sizeof_wb);
+    CUDA_CHECK(cudaMemcpy(hw, nn.w, sizeof_wb, cudaMemcpyDeviceToHost));
+    GNN_ASSERT(hw);
 
     dim3 threads(8, 8, 8);
     dim3 blocks(
         (nn.count + threads.x - 1) / threads.x,
-        (hw_0->rows + threads.y - 1) / threads.y,
-        (hw_0->cols + threads.z - 1) / threads.z
+        (hw[0].rows + threads.y - 1) / threads.y,
+        (hw[0].cols + threads.z - 1) / threads.z
     );
 
-    free(hw_0);
+    free(hw);
     nn_learn_kernel<<<blocks, threads>>>(nn, g, rate);
     CUDA_CHECK(cudaGetLastError());
 }
 
 void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t iter) {
     for (size_t i = 0; i < iter; ++i) {
-        g = nn_backprop(nn, g, ti, to);
+#if 1
+        nn_backprop(nn, g, ti, to);
+#else
+        nn_finite_diff(nn, g, ti, to);
+#endif
         nn_learn(nn, g, rate);
-        printf("%zu: cost: %f", i, nn_cost(nn, ti, to));
+        printf("%zu: cost: %f\n", i, nn_cost(nn, ti, to));
     }
 }
 

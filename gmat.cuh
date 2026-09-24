@@ -225,12 +225,8 @@ void mat_rand_noncontiguous(Mat m, float low, float high, uint64_t seed) {
 }
 
 void mat_rand(Mat m, float low, float high) {
-    //for testing
-#if 0
-    uint64_t seed = mat_rand_seed++; //new seed per call
-#else
-    uint64_t seed = mat_rand_seed;
-#endif
+    uint64_t seed = mat_rand_seed++;
+    //uint64_t seed = mat_rand_seed;
     (m.stride == m.cols) ? mat_rand_contiguous(m, low, high, seed) : mat_rand_noncontiguous(m, low, high, seed);
 }
 
