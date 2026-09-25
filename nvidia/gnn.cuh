@@ -252,8 +252,8 @@ void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps) {
     free(hgb);
 }
 
-__global__ void nn_backprop_gradient_kernel() {
-
+__global__ void nn_backprop_gradient_kernel(NN nn, NN g, Mat ti, Mat to) {
+    // TODO:
 }
 
 __global__ void nn_backprop_divider_kernel(NN g, size_t n) {
@@ -286,7 +286,7 @@ void nn_backprop(NN nn, NN g, Mat ti, Mat to) {
         //gradient kernel
     }
 
-    size_t sizeof_w = sizeof(Mat) * (g.count + 1);
+    size_t sizeof_w = sizeof(Mat) * g.count;
     Mat* hgw = (Mat*) malloc(sizeof_w);
     GNN_ASSERT(hgw);
     CUDA_CHECK(cudaMemcpy(hgw, g.w, sizeof_w, cudaMemcpyDeviceToHost));
