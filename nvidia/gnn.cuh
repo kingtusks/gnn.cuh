@@ -252,8 +252,13 @@ void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps) {
     free(hgb);
 }
 
+__global__ void nn_backprop_output_kernel(Mat ga, Mat a, Mat to) {
+    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    if (j < a.cols)
+        MAT_AT(g, 0, j)
+}
 __global__ void nn_backprop_gradient_kernel(NN nn, NN g, Mat ti, Mat to) {
-    // TODO:
+
 }
 
 __global__ void nn_backprop_divider_kernel(NN g, size_t n) {
@@ -278,12 +283,11 @@ void nn_backprop(NN nn, NN g, Mat ti, Mat to) {
     GNN_ASSERT(ha);
     CUDA_CHECK(cudaMemcpy(ha, nn.a, sizeof_a, cudaMemcpyDeviceToHost));
     GNN_ASSERT(ha[nn.count].cols == to.cols);
-    free(ha);
 
     size_t n = ti.rows;
     nn_fill(g, 0);
     for (size_t i = 0; i < n; ++i) {
-        //gradient kernel
+        
     }
 
     size_t sizeof_w = sizeof(Mat) * g.count;
@@ -298,8 +302,10 @@ void nn_backprop(NN nn, NN g, Mat ti, Mat to) {
         (hgw[0].rows + threads.y - 1) / threads.y,
         (hgw[0].cols + threads.z - 1) / threads.z
     );
-    free(hgw);
     nn_backprop_divider_kernel<<<blocks, threads>>>(g, n);
+
+    free(ha);
+    free(hgw);
 }
 
 __global__ void nn_learn_kernel(NN nn, NN g, float rate) {
