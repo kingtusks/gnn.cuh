@@ -2,7 +2,7 @@
 #include "gnn.cuh"
 
 #define RATE 1
-#define ITER 100
+#define ITER 999999
 
 float td[] = {
     0, 0, 0,
