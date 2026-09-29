@@ -208,8 +208,6 @@ float nn_cost(NN nn, Mat ti, Mat to) {
     return c / ti.rows;
 }
 
-// TODO: fix this (the MAT_AT unwraps to mat.es and we can't do that in the host)
-// TODO: kernalizing (wow) would also be kinda weird with the nn_cost() nudged in there
 void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps) {
     size_t sizeof_wb = sizeof(Mat) * nn.count;
     Mat* hw = (Mat*) malloc(sizeof_wb);
@@ -223,25 +221,41 @@ void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps) {
     CUDA_CHECK(cudaMemcpy(hgw, g.w, sizeof_wb, cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(hgb, g.b, sizeof_wb, cudaMemcpyDeviceToHost));
 
-    float saved;
+    float saved, cp, grad;
     float c = nn_cost(nn, ti, to);
 
     for (size_t i = 0; i < nn.count; ++i) {
         for (size_t j = 0; j < hw[i].rows; ++j) {
             for (size_t k = 0; k < hw[i].cols; ++k) {
-                saved = MAT_AT(hw[i], j, k);
-                MAT_AT(hw[i], j, k) += eps;
-                MAT_AT(hgw[i], j, k) = (nn_cost(nn, ti, to) - c) / eps;
-                MAT_AT(hw[i], j, k) = saved;
+                float* w = &MAT_AT(hw[i], j, k);
+
+                CUDA_CHECK(cudaMemcpy(&saved, w, sizeof(float), cudaMemcpyDeviceToHost));
+
+                float nudged = saved + eps;
+                CUDA_CHECK(cudaMemcpy(w, &nudged, sizeof(float), cudaMemcpyHostToDevice));
+
+                cp = nn_cost(nn, ti, to);
+                grad = (cp - c) / eps;
+
+                CUDA_CHECK(cudaMemcpy(w, &saved, sizeof(float), cudaMemcpyHostToDevice));
+                CUDA_CHECK(cudaMemcpy(&MAT_AT(hgw[i], j, k), &grad, sizeof(float), cudaMemcpyHostToDevice));
             }
-       }
+        }
 
         for (size_t j = 0; j < hb[i].rows; ++j) {
             for (size_t k = 0; k < hb[i].cols; ++k) {
-                saved = MAT_AT(hb[i], j, k);
-                MAT_AT(hb[i], j, k) += eps;
-                MAT_AT(hgb[i], j, k) = (nn_cost(nn, ti, to) - c) / eps;
-                MAT_AT(hb[i], j, k) = saved;
+                float* b = &MAT_AT(hb[i], j, k);
+
+                CUDA_CHECK(cudaMemcpy(&saved, b, sizeof(float), cudaMemcpyDeviceToHost));
+
+                float nudged = saved + eps;
+                CUDA_CHECK(cudaMemcpy(b, &nudged, sizeof(float), cudaMemcpyHostToDevice));
+
+                cp = nn_cost(nn, ti, to);
+                grad = (cp - c) / eps;
+
+                CUDA_CHECK(cudaMemcpy(b, &saved, sizeof(float), cudaMemcpyHostToDevice));
+                CUDA_CHECK(cudaMemcpy(&MAT_AT(hgb[i], j, k), &grad, sizeof(float), cudaMemcpyHostToDevice));
             }
         }
     }
@@ -265,7 +279,7 @@ __global__ void nn_backprop_gradient_kernel(Mat ha_curr, Mat ga_curr, Mat ha_pre
 
     float d = 2 * MAT_AT(ga_curr, 0, j) * MAT_AT(ha_curr, 0, j) * (1 - MAT_AT(ha_curr, 0, j));
     MAT_AT(hgw_prev, k, j) += d * MAT_AT(ha_prev, 0, k);
-    atomicAdd(&MAT_AT(hga_prev, 0, k), d * MAT_AT(hgw_prev, k, j));
+    atomicAdd(&MAT_AT(hga_prev, 0, k), d * MAT_AT(hw_prev, k, j));
     if (k == 0) MAT_AT(hgb_prev, 0, j) += d;
 }
 
@@ -393,7 +407,7 @@ void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t iter) {
 #if 1
         nn_backprop(nn, g, ti, to);
 #else
-        nn_finite_diff(nn, g, ti, to);
+        nn_finite_diff(nn, g, ti, to, 1e-2);
 #endif
         nn_learn(nn, g, rate);
         printf("%zu: cost: %f\n", i, nn_cost(nn, ti, to));
