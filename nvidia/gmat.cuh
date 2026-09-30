@@ -11,7 +11,7 @@
 #endif //GNN_ASSERT
 
 #ifndef MAT_RAND_SEED
-#define MAT_RAND_SEED 16122008
+#define MAT_RAND_SEED 16122008ULL
 #endif //MAT_RAND_SEED
 
 typedef struct {

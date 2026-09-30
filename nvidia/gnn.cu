@@ -1,9 +1,9 @@
 #define GNN_IMPLEMENTATION
 #include "gnn.cuh"
-#include "time.h"
+// #include "time.h"
 
 #define RATE 1
-#define ITER 7500
+#define ITER 10000
 
 float td[] = {
     0, 0, 0,
@@ -13,7 +13,7 @@ float td[] = {
 };
 
 int main() {
-    mat_set_seed((uint64_t) time(NULL));
+    // mat_set_seed((uint64_t) time(NULL));
     size_t stride = 3;
     size_t n = sizeof(td) / sizeof(td[0]) / stride;
 
@@ -21,8 +21,9 @@ int main() {
     Mat to = mat_alloc_from(n, 1, stride, td + 2);
 
     size_t dim[] = {2, 2, 1};
-    NN nn = nn_alloc(dim, 3);
-    NN g = nn_alloc(dim, 3);
+    // size_t dim[] = {2, 8, 8, 4, 1};
+    NN nn = nn_alloc(dim, ARRAY_LEN(dim));
+    NN g = nn_alloc(dim, ARRAY_LEN(dim));
 
     nn_rand(nn, -1, 1);
     nn_train(nn, g, ti, to, RATE, ITER);
@@ -45,7 +46,7 @@ int main() {
         }
     }
 
-    NN_PRINT(nn);
+    // NN_PRINT(nn);
 
     free(ha);
     return 0;
