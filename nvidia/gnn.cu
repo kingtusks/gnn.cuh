@@ -21,7 +21,7 @@ int main() {
     Mat to = mat_alloc_from(n, 1, stride, td + 2);
 
     size_t dim[] = {2, 2, 1};
-    // size_t dim[] = {2, 8, 8, 4, 1};
+    // size_t dim[] = {784, 128, 64, 10};
     NN nn = nn_alloc(dim, ARRAY_LEN(dim));
     NN g = nn_alloc(dim, ARRAY_LEN(dim));
 
