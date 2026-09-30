@@ -22,14 +22,15 @@ std::vector<std::vector<float>> extract_images(std::ifstream& file, size_t iter)
     return images;
 }
 
-std::vector<size_t> extract_labels(std::ifstream& file, size_t iter) {
+//instead of being a float we need it to be an array[10] with one 1 and rest 0 corresponding to the #
+std::vector<float> extract_labels(std::ifstream& file, size_t iter) {
     file.seekg(8);
     std::vector<unsigned char> raw(iter);
     file.read(reinterpret_cast<char*>(raw.data()), iter);
 
-    std::vector<size_t> labels(iter);
+    std::vector<float> labels(iter);
     for (size_t i = 0; i < iter; ++i)
-        labels[i] = (size_t) raw[i];
+        labels[i] = (float) raw[i];
     return labels;
 }
 
@@ -53,7 +54,7 @@ int main() {
     // }
 
     //std::vector<size_t>
-    printf("%zu\n", train_labels[IDX]);
+    printf("%f\n", train_labels[IDX]);
 
     return 0;
 }

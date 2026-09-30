@@ -5,23 +5,21 @@
 #define RATE 1
 #define ITER 10000
 
-float td[] = {
+float xor_td[] = {
     0, 0, 0,
     0, 1, 1,
     1, 0, 1,
     1, 1, 0,
 };
 
-int main() {
-    // mat_set_seed((uint64_t) time(NULL));
+void xor_nn() {
     size_t stride = 3;
-    size_t n = sizeof(td) / sizeof(td[0]) / stride;
+    size_t n = sizeof(xor_td) / sizeof(xor_td[0]) / stride;
 
-    Mat ti = mat_alloc_from(n, 2, stride, td);
-    Mat to = mat_alloc_from(n, 1, stride, td + 2);
+    Mat ti = mat_alloc_from(n, 2, stride, xor_td);
+    Mat to = mat_alloc_from(n, 1, stride, xor_td + 2);
 
     size_t dim[] = {2, 2, 1};
-    // size_t dim[] = {784, 128, 64, 10};
     NN nn = nn_alloc(dim, ARRAY_LEN(dim));
     NN g = nn_alloc(dim, ARRAY_LEN(dim));
 
@@ -46,8 +44,31 @@ int main() {
         }
     }
 
-    // NN_PRINT(nn);
-
     free(ha);
+}
+
+// Mat mnist_td;
+
+void mnist_nn() {
+    size_t stride = 785;
+    size_t n = sizeof(mnist_td) / sizeof(mnist_td[0]) / stride;
+
+    Mat ti = mat_alloc_from(n, 784, stride, mnist_td);
+    Mat to = mat_alloc_from(n, 1, stride, mnist_td + 784);
+
+    size_t dim[] = {784, 128, 64, 10};
+    NN nn = nn_alloc(dim, ARRAY_LEN(dim));
+    NN g = nn_alloc(dim, ARRAY_LEN(dim));
+
+    nn_rand(nn, -10, 10);
+    nn_train(nn, g, ti, to, RATE, ITER);
+}
+
+int main() {
+#if 0
+    xor_nn();
+#else
+    mnist_nn();
+#endif
     return 0;
 }
