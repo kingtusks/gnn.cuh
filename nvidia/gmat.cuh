@@ -352,22 +352,6 @@ void mat_sum(Mat dst, Mat m) {
 }
 
 __global__ void mat_dot_ta_kernel(Mat dst, Mat a, Mat b) {
-
-}
-
-__host__ __device__ void mat_dot_ta(Mat dst, Mat a, Mat b) {
-    GNN_ASSERT(a.cols == b.rows);
-    GNN_ASSERT(dst.rows == a.rows);
-    GNN_ASSERT(dst.cols == b.cols);
-
-    dim3 threads(TILE, TILE);
-    dim3 blocks((unsigned int) ((b.cols + TILE - 1) / TILE),
-                (unsigned int) ((a.rows + TILE - 1) / TILE));
-
-    mat_dot_kernel<<<blocks, threads>>>(dst, a, b);
-}
-
-__global__ void mat_dot_tb_kernel(Mat dst, Mat a, Mat b) {
     __shared__ float As[TILE][TILE];
     __shared__ float Bs[TILE][TILE];
 
@@ -391,16 +375,52 @@ __global__ void mat_dot_tb_kernel(Mat dst, Mat a, Mat b) {
         MAT_AT(dst, i, j) = res;
 }
 
-__host__ __device__ void mat_dot_tb(Mat dst, Mat a, Mat b) {
+__host__ __device__ void mat_dot_ta(Mat dst, Mat a, Mat b) {
     GNN_ASSERT(a.cols == b.rows);
+    GNN_ASSERT(dst.rows == a.cols);
+    GNN_ASSERT(dst.cols == b.cols);
+
+    dim3 threads(TILE, TILE);
+    dim3 blocks((unsigned int) ((b.cols + TILE - 1) / TILE),
+                (unsigned int) ((a.cols + TILE - 1) / TILE));
+    mat_dot_kernel<<<blocks, threads>>>(dst, a, b);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+__global__ void mat_dot_tb_kernel(Mat dst, Mat a, Mat b) {
+    __shared__ float As[TILE][TILE];
+    __shared__ float Bs[TILE][TILE];
+
+    size_t i = (size_t) blockIdx.y * TILE + threadIdx.y;
+    size_t j = (size_t) blockIdx.x * TILE + threadIdx.x;
+    float res = 0;
+
+    float (size_t t = 0; t < a.rows; t += TILE) {
+        size_t ka = t + threadIdx.x;
+        size_t kb = t + threadIdx.y;
+        As[threadIdx.y][threadIdx.x] = (i < a.rows && ka < a.cols) ? MAT_AT(a, i, ka) : 0;
+        Bs[threadIdx.y][threadIdx.x] = (kb < b.rows && j < a.cols) ? MAT_AT(b, j, kb) : 0;
+        __syncthreads();
+
+        for (int k = 0; k < TILE; ++k)
+            res += As[threadIdx.y][k] * Bs[k][threadIdx.x];
+        __syncthreads();
+    }
+
+    if (i < dst.rows && j < dst.cols)
+        MAT_AT(dst, i, j) = res;
+}
+
+__host__ __device__ void mat_dot_tb(Mat dst, Mat a, Mat b) {
+    GNN_ASSERT(a.cols == b.cols);
     GNN_ASSERT(dst.rows == a.rows);
     GNN_ASSERT(dst.cols == b.cols);
 
     dim3 threads(TILE, TILE);
     dim3 blocks((unsigned int) ((b.cols + TILE - 1) / TILE),
                 (unsigned int) ((a.rows + TILE - 1) / TILE));
-
     mat_dot_tb_kernel<<<blocks, threads>>>(dst, a, b);
+    CUDA_CHECK(cudaGetLastError());
 }
 
 //slow for now while i port and test the rest (around 15%ish of cuBLAS)
@@ -437,6 +457,7 @@ void mat_dot(Mat dst, Mat a, Mat b) {
                 (unsigned int) ((a.rows + TILE - 1) / TILE));
 
     mat_dot_kernel<<<blocks, threads>>>(dst, a, b);
+    CUDA_CHECK(cudaGetLastError());
 }
 
 //ACTIVATIONS
