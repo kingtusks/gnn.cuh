@@ -56,9 +56,6 @@ __global__ void mat_copy_noncontiguous_kernel(Mat dst, Mat m);
 __host__ __device__ void mat_copy_noncontiguous(Mat dst, Mat m);
 __host__ __device__ void mat_copy(Mat dst, Mat m);
 
-__global__ void mat_dot_kernel(Mat dst, Mat a, Mat b);
-__host__ __device__ void mat_dot(Mat dst, Mat a, Mat b);
-
 __global__ void mat_sum_bias_kernel(Mat dst, Mat m);
 __host__ __device__ void mat_sum_bias(Mat dst, Mat m);
 
@@ -67,6 +64,14 @@ __host__ __device__ void mat_sum_contiguous(Mat dst, Mat m);
 __global__ void mat_sum_noncontiguous_kernel(Mat dst, Mat m);
 __host__ __device__ void mat_sum_noncontiguous(Mat dst, Mat m);
 __host__ __device__ void mat_sum(Mat dst, Mat m);
+
+__global__ void mat_dot_ta_kernel(Mat dst, Mat a, Mat b);
+__host__ __device__ void mat_dot_ta(Mat dst, Mat a, Mat b);
+__global__ void mat_dot_tb_kernel(Mat dst, Mat a, Mat b);
+__host__ __device__ void mat_dot_tb(Mat dst, Mat a, Mat b);
+
+__global__ void mat_dot_kernel(Mat dst, Mat a, Mat b);
+__host__ __device__ void mat_dot(Mat dst, Mat a, Mat b);
 
 __global__ void mat_sig_contiguous_kernel(float* p, size_t area);
 __host__ __device__ void mat_sig_contiguous(Mat m);
@@ -288,42 +293,6 @@ __host__ __device__ void mat_copy(Mat dst, Mat m) {
 
 //MATRIX OPS
 
-//slow for now while i port and test the rest (around 15%ish of cuBLAS)
-__global__ void mat_dot_kernel(Mat dst, Mat a, Mat b) {
-    __shared__ float As[TILE][TILE];
-    __shared__ float Bs[TILE][TILE];
-
-    size_t i = (size_t) blockIdx.y * TILE + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * TILE + threadIdx.x;
-    float res = 0;
-
-    for (size_t t = 0; t < a.cols; t += TILE) {
-        size_t a_col = t + threadIdx.x;
-        size_t b_row = t + threadIdx.y;
-        As[threadIdx.y][threadIdx.x] = (i < a.rows && a_col < a.cols) ? a.es[i * a.cols + a_col] : 0;
-        Bs[threadIdx.y][threadIdx.x] = (b_row < a.cols && j < b.cols) ? b.es[b_row * b.cols + j] : 0;
-        __syncthreads();
-
-        for (int k = 0; k < TILE; ++k)
-            res += As[threadIdx.y][k] * Bs[k][threadIdx.x];
-        __syncthreads();
-    }
-
-    if (i < a.rows && j < b.cols) dst.es[i * b.cols + j] = res;
-}
-
-void mat_dot(Mat dst, Mat a, Mat b) {
-    GNN_ASSERT(a.cols == b.rows);
-    GNN_ASSERT(dst.rows == a.rows);
-    GNN_ASSERT(dst.cols == b.cols);
-
-    dim3 threads(TILE, TILE);
-    dim3 blocks((unsigned int) ((b.cols + TILE - 1) / TILE),
-                (unsigned int) ((a.rows + TILE - 1) / TILE));
-
-    mat_dot_kernel<<<blocks, threads>>>(dst, a, b);
-}
-
 __global__ void mat_sum_bias_kernel(Mat dst, Mat m) {
     size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
     size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
@@ -380,6 +349,94 @@ void mat_sum(Mat dst, Mat m) {
     GNN_ASSERT(dst.cols == m.cols);
 
     (m.stride == m.cols && dst.stride == dst.cols) ? mat_sum_contiguous(dst, m) : mat_sum_noncontiguous(dst, m);
+}
+
+__global__ void mat_dot_ta_kernel(Mat dst, Mat a, Mat b) {
+
+}
+
+__host__ __device__ void mat_dot_ta(Mat dst, Mat a, Mat b) {
+    GNN_ASSERT(a.cols == b.rows);
+    GNN_ASSERT(dst.rows == a.rows);
+    GNN_ASSERT(dst.cols == b.cols);
+
+    dim3 threads(TILE, TILE);
+    dim3 blocks((unsigned int) ((b.cols + TILE - 1) / TILE),
+                (unsigned int) ((a.rows + TILE - 1) / TILE));
+
+    mat_dot_kernel<<<blocks, threads>>>(dst, a, b);
+}
+
+__global__ void mat_dot_tb_kernel(Mat dst, Mat a, Mat b) {
+    __shared__ float As[TILE][TILE];
+    __shared__ float Bs[TILE][TILE];
+
+    size_t i = (size_t) blockIdx.y * TILE + threadIdx.y;
+    size_t j = (size_t) blockIdx.x * TILE + threadIdx.x;
+    float res = 0;
+
+    float (size_t t = 0; t < a.rows; t += TILE) {
+        size_t ka = t + threadIdx.x;
+        size_t kb = t + threadIdx.y;
+        As[threadIdx.y][threadIdx.x] = (i < a.cols && ka < a.rows) ? MAT_AT(a, ka, i) : 0;
+        Bs[threadIdx.y][threadIdx.x] = (kb < b.rows && j < a.cols) ? MAT_AT(b, kb, j) : 0;
+        __syncthreads();
+
+        for (int k = 0; k < TILE; ++k)
+            res += As[threadIdx.y][k] * Bs[k][threadIdx.x];
+        __syncthreads();
+    }
+
+    if (i < dst.rows && j < dst.cols)
+        MAT_AT(dst, i, j) = res;
+}
+
+__host__ __device__ void mat_dot_tb(Mat dst, Mat a, Mat b) {
+    GNN_ASSERT(a.cols == b.rows);
+    GNN_ASSERT(dst.rows == a.rows);
+    GNN_ASSERT(dst.cols == b.cols);
+
+    dim3 threads(TILE, TILE);
+    dim3 blocks((unsigned int) ((b.cols + TILE - 1) / TILE),
+                (unsigned int) ((a.rows + TILE - 1) / TILE));
+
+    mat_dot_tb_kernel<<<blocks, threads>>>(dst, a, b);
+}
+
+//slow for now while i port and test the rest (around 15%ish of cuBLAS)
+__global__ void mat_dot_kernel(Mat dst, Mat a, Mat b) {
+    __shared__ float As[TILE][TILE];
+    __shared__ float Bs[TILE][TILE];
+
+    size_t i = (size_t) blockIdx.y * TILE + threadIdx.y;
+    size_t j = (size_t) blockIdx.x * TILE + threadIdx.x;
+    float res = 0;
+
+    for (size_t t = 0; t < a.cols; t += TILE) {
+        size_t a_col = t + threadIdx.x;
+        size_t b_row = t + threadIdx.y;
+        As[threadIdx.y][threadIdx.x] = (i < a.rows && a_col < a.cols) ? a.es[i * a.cols + a_col] : 0;
+        Bs[threadIdx.y][threadIdx.x] = (b_row < a.cols && j < b.cols) ? b.es[b_row * b.cols + j] : 0;
+        __syncthreads();
+
+        for (int k = 0; k < TILE; ++k)
+            res += As[threadIdx.y][k] * Bs[k][threadIdx.x];
+        __syncthreads();
+    }
+
+    if (i < a.rows && j < b.cols) dst.es[i * b.cols + j] = res;
+}
+
+void mat_dot(Mat dst, Mat a, Mat b) {
+    GNN_ASSERT(a.cols == b.rows);
+    GNN_ASSERT(dst.rows == a.rows);
+    GNN_ASSERT(dst.cols == b.cols);
+
+    dim3 threads(TILE, TILE);
+    dim3 blocks((unsigned int) ((b.cols + TILE - 1) / TILE),
+                (unsigned int) ((a.rows + TILE - 1) / TILE));
+
+    mat_dot_kernel<<<blocks, threads>>>(dst, a, b);
 }
 
 //ACTIVATIONS
