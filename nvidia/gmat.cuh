@@ -59,6 +59,12 @@ __host__ __device__ void mat_copy(Mat dst, Mat m);
 __global__ void mat_sum_bias_kernel(Mat dst, Mat m);
 __host__ __device__ void mat_sum_bias(Mat dst, Mat m);
 
+__global__ void mat_sum_collapse_kernel(Mat dst, Mat m);
+__host__ __device__ void mat_sum_collapse(Mat dst, Mat m);
+
+__global__ void mat_sum_scaled_kernel(Mat dst, Mat m, float s);
+__host__ __device__ void mat_sum_scaled(Mat dst, Mat m, float s);
+
 __global__ void mat_sum_contiguous_kernel(float* dst, const float* src, size_t area);
 __host__ __device__ void mat_sum_contiguous(Mat dst, Mat m);
 __global__ void mat_sum_noncontiguous_kernel(Mat dst, Mat m);
@@ -314,6 +320,44 @@ __host__ __device__ void mat_sum_bias(Mat dst, Mat m) {
     CUDA_CHECK(cudaGetLastError());
 }
 
+__global__ void mat_sum_collapse_kernel(Mat dst, Mat m) {
+    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    if (j >= m.cols) return;
+
+    float s = 0;
+    for (size_t i = 0; i < m.rows; ++i)
+        s += MAT_AT(m, i, j);
+    MAT_AT(dst, 0, j) = s;
+}
+
+__host__ __device__ void mat_sum_collapse(Mat dst, Mat m) {
+    GNN_ASSERT(dst.rows == 1);
+    GNN_ASSERT(dst.cols == m.cols);
+
+    unsigned int threads = 256;
+    unsigned int blocks = (unsigned int) ((m.cols + threads - 1) / threads);
+    mat_sum_scaled_kernel<<<blocks, threads>>>(dst, m);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+__global__ void mat_sum_scaled_kernel(Mat dst, Mat m, float s) {
+    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
+    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i < m.rows && j < m.cols)
+        MAT_AT(dst, i, j) += s * MAT_AT(m, i, j);
+}
+
+__host__ __device__ void mat_sum_scaled(Mat dst, Mat m, float s) {
+    GNN_ASSERT(dst.rows == m.rows);
+    GNN_ASSERT(dst.cols == m.cols);
+
+    dim3 threads(32, 8);
+    dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
+    mat_sum_scaled_kernel<<<blocks, threads>>>(dst, m, s);
+    CUDA_CHECK(cudaGetLastError());
+}
+
 __global__ void mat_sum_contiguous_kernel(float* dst, const float* src, size_t area) {
     size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
     size_t stride = (size_t) gridDim.x * blockDim.x;
@@ -383,7 +427,7 @@ __host__ __device__ void mat_dot_ta(Mat dst, Mat a, Mat b) {
     dim3 threads(TILE, TILE);
     dim3 blocks((unsigned int) ((b.cols + TILE - 1) / TILE),
                 (unsigned int) ((a.cols + TILE - 1) / TILE));
-    mat_dot_kernel<<<blocks, threads>>>(dst, a, b);
+    mat_dot_ta_kernel<<<blocks, threads>>>(dst, a, b);
     CUDA_CHECK(cudaGetLastError());
 }
 
