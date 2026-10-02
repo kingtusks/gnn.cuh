@@ -59,6 +59,9 @@ __host__ __device__ void mat_copy(Mat dst, Mat m);
 __global__ void mat_dot_kernel(Mat dst, Mat a, Mat b);
 __host__ __device__ void mat_dot(Mat dst, Mat a, Mat b);
 
+__global__ void mat_sum_bias_kernel(Mat dst, Mat m);
+__host__ __device__ void mat_sum_bias(Mat dst, Mat m);
+
 __global__ void mat_sum_contiguous_kernel(float* dst, const float* src, size_t area);
 __host__ __device__ void mat_sum_contiguous(Mat dst, Mat m);
 __global__ void mat_sum_noncontiguous_kernel(Mat dst, Mat m);
@@ -319,6 +322,27 @@ void mat_dot(Mat dst, Mat a, Mat b) {
                 (unsigned int) ((a.rows + TILE - 1) / TILE));
 
     mat_dot_kernel<<<blocks, threads>>>(dst, a, b);
+}
+
+__global__ void mat_sum_bias_kernel(Mat dst, Mat m) {
+    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
+    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i < dst.rows && j < dst.cols)
+        MAT_AT(dst, i, j) += MAT_AT(b, 0, j);
+}
+
+__host__ __device__ void mat_sum_bias(Mat dst, Mat m) {
+    GNN_ASSERT(m.rows == 1);
+    GNN_ASSERT(m.cols == dst.cols);
+
+    dim3 threads(32, 8);
+    dim3 blocks(
+        (unsigned int) ((dst.cols + threads.x - 1) / threads.x),
+        (unsigned int) ((dst.rows + threads.y - 1) / threads.y)
+    );
+    mat_sum_bias_kernel<<<blocks, threads>>>(dst, m);
+    CUDA_CHECK(cudaGetLastError());
 }
 
 __global__ void mat_sum_contiguous_kernel(float* dst, const float* src, size_t area) {

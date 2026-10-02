@@ -17,10 +17,9 @@
 #endif //GNN_MALLOC
 
 typedef struct {
-    size_t count;
-    Mat *w;
-    Mat *b;
-    Mat *a;
+    size_t count, batch;
+    Mat *w, *b, *a;
+    float *dc;
 } NN;
 
 #define ARRAY_LEN(arr) (sizeof((arr)) / sizeof((arr)[0]))
@@ -28,52 +27,49 @@ typedef struct {
 #define NN_OUTPUT(nn) (nn).a[(nn).count]
 #define NN_PRINT(nn) nn_print(nn, #nn)
 
-NN nn_alloc(size_t* dim, size_t dim_len);
+NN nn_alloc(size_t* dim, size_t dim_len, size_t batch);
 void nn_rand(NN nn, float low, float high);
 void nn_fill(NN nn, float n);
 void nn_forward(NN nn);
-__global__ void nn_cost_kernel(Mat out, Mat y, float* dc);
+__global__ void nn_cost_kernel(Mat out, Mat y);
 float nn_cost(NN nn, Mat ti, Mat to);
 void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps);
+__global__ void nn_backprop_output_kernel(Mat ha_out, Mat hga_out, Mat to_row);
+__global__ void nn_backprop_gradient_kernel(Mat ha_curr, Mat ga_curr, Mat ha_prev, Mat hw_prev, Mat hgw_prev, Mat hgb_prev, Mat hga_prev);
+__global__ void nn_backprop_divider_kernel(NN g, size_t n);
 void nn_backprop(NN nn, NN g, Mat ti, Mat to);
+__global__ void nn_learn_kernel(NN nn, NN g, float rate);
 void nn_learn(NN nn, NN g, float rate);
 void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t iter);
 void nn_print(NN nn, const char* name);
 
 #ifdef GNN_IMPLEMENTATION
 
-NN nn_alloc(size_t* dim, size_t dim_len) {
+NN nn_alloc(size_t* dim, size_t dim_len, size_t batch) {
     NN nn;
     nn.count = dim_len - 1;
-
+    nn.batch = batch;
     size_t sizeof_wb = sizeof(Mat) * nn.count;
     size_t sizeof_a = sizeof(Mat) * (nn.count + 1);
 
-    Mat* hw = (Mat*) malloc(sizeof_wb);
-    Mat* hb = (Mat*) malloc(sizeof_wb);
-    Mat* ha = (Mat*) malloc(sizeof_a);
-    GNN_ASSERT(hw && hb && ha);
+    nn.hw = (Mat*) malloc(sizeof_wb);
+    nn.hb = (Mat*) malloc(sizeof_wb);
+    nn.ha = (Mat*) malloc(sizeof_a);
+    GNN_ASSERT(nn.hw && nn.hb && nn.ha);
 
-    ha[0] = mat_alloc(1, dim[0]);
+    nn.ha[0] = mat_alloc(batch, dim[0]);
     for (size_t i = 1; i < dim_len; ++i) {
-        hw[i - 1] = mat_alloc(dim[i - 1], dim[i]);
-        hb[i - 1] = mat_alloc(1, dim[i]);
-        ha[i] = mat_alloc(1, dim[i]);
+        nn.hw[i - 1] = mat_alloc(dim[i - 1], dim[i]);
+        nn.hb[i - 1] = mat_alloc(1, dim[i]);
+        nn.ha[i] = mat_alloc(batch, dim[i]);
     }
 
     CUDA_CHECK(cudaMalloc((void**)&nn.w, sizeof_wb));
-    CUDA_CHECK(cudaMemcpy(nn.w, hw, sizeof_wb, cudaMemcpyHostToDevice));
-
+    CUDA_CHECK(cudaMemcpy(nn.w, nn.hw, sizeof_wb, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMalloc((void**)&nn.b, sizeof_wb));
-    CUDA_CHECK(cudaMemcpy(nn.b, hb, sizeof_wb, cudaMemcpyHostToDevice));
-
+    CUDA_CHECK(cudaMemcpy(nn.b, nn.hb, sizeof_wb, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMalloc((void**)&nn.a, sizeof_a));
-    CUDA_CHECK(cudaMemcpy(nn.a, ha, sizeof_a, cudaMemcpyHostToDevice));
-
-    free(hw);
-    free(hb);
-    free(ha);
-
+    CUDA_CHECK(cudaMemcpy(nn.a, nn.ha, sizeof_a, cudaMemcpyHostToDevice));
     return nn;
 }
 
@@ -167,7 +163,7 @@ __global__ void nn_cost_kernel(Mat out, Mat y, float* dc) {
         __syncthreads();
     }
 
-    if (tx == 0) 
+    if (tx == 0)
         dc[blockIdx.x] = sd[0];
 }
 
