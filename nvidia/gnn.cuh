@@ -16,6 +16,10 @@
 #define GNN_MALLOC malloc
 #endif //GNN_MALLOC
 
+#ifndef NN_PRINT_INTERVAL
+#define NN_PRINT_INTERVAl 5
+#endif //NN_PRINT_INTERVAL
+
 typedef struct {
     size_t count, batch;
     Mat *w, *b, *a;
@@ -23,8 +27,8 @@ typedef struct {
 } NN;
 
 #define ARRAY_LEN(arr) (sizeof((arr)) / sizeof((arr)[0]))
-#define NN_INPUT(nn) (nn).a[0]
-#define NN_OUTPUT(nn) (nn).a[(nn).count]
+#define HNN_INPUT(nn) (nn).ha[0]
+#define HNN_OUTPUT(nn) (nn).ha[(nn).count]
 #define NN_PRINT(nn) nn_print(nn, #nn)
 
 NN nn_alloc(size_t* dim, size_t dim_len, size_t batch);
@@ -52,10 +56,10 @@ NN nn_alloc(size_t* dim, size_t dim_len, size_t batch) {
     size_t sizeof_wb = sizeof(Mat) * nn.count;
     size_t sizeof_a = sizeof(Mat) * (nn.count + 1);
 
-    nn.hw = (Mat*) malloc(sizeof_wb);
-    nn.hb = (Mat*) malloc(sizeof_wb);
-    nn.ha = (Mat*) malloc(sizeof_a);
-    GNN_ASSERT(nn.hw && nn.hb && nn.ha);
+    nn.w = (Mat*) malloc(sizeof_wb);
+    nn.b = (Mat*) malloc(sizeof_wb);
+    nn.a = (Mat*) malloc(sizeof_a);
+    GNN_ASSERT(nn.w && nn.b && nn.a);
 
     nn.ha[0] = mat_alloc(batch, dim[0]);
     for (size_t i = 1; i < dim_len; ++i) {
@@ -64,12 +68,7 @@ NN nn_alloc(size_t* dim, size_t dim_len, size_t batch) {
         nn.ha[i] = mat_alloc(batch, dim[i]);
     }
 
-    CUDA_CHECK(cudaMalloc((void**)&nn.w, sizeof_wb));
-    CUDA_CHECK(cudaMemcpy(nn.w, nn.hw, sizeof_wb, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMalloc((void**)&nn.b, sizeof_wb));
-    CUDA_CHECK(cudaMemcpy(nn.b, nn.hb, sizeof_wb, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMalloc((void**)&nn.a, sizeof_a));
-    CUDA_CHECK(cudaMemcpy(nn.a, nn.ha, sizeof_a, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMalloc((void**)&dc, sizeof(float));
     return nn;
 }
 

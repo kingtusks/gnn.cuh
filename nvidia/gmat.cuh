@@ -58,10 +58,8 @@ __host__ __device__ void mat_copy(Mat dst, Mat m);
 
 __global__ void mat_sum_bias_kernel(Mat dst, Mat m);
 __host__ __device__ void mat_sum_bias(Mat dst, Mat m);
-
 __global__ void mat_sum_collapse_kernel(Mat dst, Mat m);
 __host__ __device__ void mat_sum_collapse(Mat dst, Mat m);
-
 __global__ void mat_sum_scaled_kernel(Mat dst, Mat m, float s);
 __host__ __device__ void mat_sum_scaled(Mat dst, Mat m, float s);
 
