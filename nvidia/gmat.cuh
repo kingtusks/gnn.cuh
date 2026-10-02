@@ -11,7 +11,7 @@
 #endif //GNN_ASSERT
 
 #ifndef MAT_RAND_SEED
-#define MAT_RAND_SEED 16122008ULL
+#define MAT_RAND_SEED 16122008
 #endif //MAT_RAND_SEED
 
 typedef struct {
@@ -48,6 +48,7 @@ void mat_rand_noncontiguous(Mat m, float low, float high, uint64_t seed);
 void mat_rand(Mat m, float low, float high);
 
 __host__ __device__ Mat mat_row(Mat m, size_t row);
+__host__ __device__ Mat mat_rows(Mat m, size_t row, size_t n);
 
 __global__ void mat_copy_contiguous_kernel(float* dst, const float* src, size_t area);
 __host__ __device__ void mat_copy_contiguous(Mat dst, Mat m);
@@ -233,6 +234,15 @@ void mat_rand(Mat m, float low, float high) {
 __host__ __device__ Mat mat_row(Mat m, size_t row) {
     return (Mat) {
         .rows = 1,
+        .cols = m.cols,
+        .stride = m.stride,
+        .es = &MAT_AT(m, row, 0),
+    };
+}
+
+__host__ __device__ Mat mat_rows(Mat m, size_t row, size_t n) {
+    return (Mat) {
+        .rows = n,
         .cols = m.cols,
         .stride = m.stride,
         .es = &MAT_AT(m, row, 0),
