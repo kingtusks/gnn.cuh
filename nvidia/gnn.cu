@@ -3,7 +3,7 @@
 #define MNIST_IMPLEMENTATION
 #include "../mnist/mnist.h"
 
-#define RATE 1
+#define RATE 5
 #define ITER 10000
 
 float xor_td[] = {
@@ -21,8 +21,8 @@ void xor_nn() {
     Mat to = mat_alloc_from(n, 1, stride, xor_td + 2);
 
     size_t dim[] = {2, 2, 1};
-    NN nn = nn_alloc(dim, ARRAY_LEN(dim), 1);
-    NN g = nn_alloc(dim, ARRAY_LEN(dim), 1);
+    NN nn = nn_alloc(dim, ARRAY_LEN(dim));
+    NN g = nn_alloc(dim, ARRAY_LEN(dim));
 
     nn_rand(nn, -1, 1);
     nn_train(nn, g, ti, to, RATE, ITER);
@@ -59,8 +59,8 @@ void mnist_nn() {
     Mat to = mat_alloc_from(n, MNIST_N_CLASSES, MNIST_STRIDE, mnist_td.data() + MNIST_IMG_SIZE);
 
     size_t dim[] = {784, 128, 64, 10};
-    NN nn = nn_alloc(dim, ARRAY_LEN(dim), 100);
-    NN g = nn_alloc(dim, ARRAY_LEN(dim), 100);
+    NN nn = nn_alloc(dim, ARRAY_LEN(dim));
+    NN g = nn_alloc(dim, ARRAY_LEN(dim));
 
     nn_rand(nn, -10, 10);
     nn_train(nn, g, ti, to, RATE, ITER);
