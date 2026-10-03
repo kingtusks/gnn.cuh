@@ -33,7 +33,7 @@ Tested on: [GPU / ROCm version, or "CUDA only so far"].
 
 ## Usage
 
-```c
+```cpp
 #define GNN_IMPLEMENTATION
 #include "gnn.cuh"
 
@@ -46,10 +46,3 @@ nn_test(nn, ti, to);                          // prints accuracy
 ```
 
 `ti` and `to` are `Mat`s on the GPU with one sample per row.
-
-## Notes
-
-- Sigmoid activation, mean squared error, mini-batch SGD
-- Each layer is one tiled matrix multiply over the whole batch
-- `mat_dot` is hand-written, roughly 15% of cuBLAS on NVIDIA. Not yet measured on AMD.
-- HIP support is a thin compat layer: with `GMAT_HIP` defined, the `cuda*` runtime calls are macro-mapped to their `hip*` equivalents in `gmat.cuh`

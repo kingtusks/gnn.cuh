@@ -21,6 +21,7 @@
 #define MAT_HOST_DEVICE __host__ __device__
 #endif
 
+#include <cstdlib>
 #include <cstdio>
 #include <cmath>
 #include <stdint.h>
@@ -265,21 +266,21 @@ void mat_rand(Mat m, float low, float high) {
 }
 
 MAT_HOST_DEVICE Mat mat_row(Mat m, size_t row) {
-    return (Mat) {
-        .rows = 1,
-        .cols = m.cols,
-        .stride = m.stride,
-        .es = &MAT_AT(m, row, 0),
-    };
+    Mat r;
+    r.rows = 1;
+    r.cols = m.cols;
+    r.stride = m.stride;
+    r.es = &MAT_AT(m, row, 0);
+    return r;
 }
 
 MAT_HOST_DEVICE Mat mat_rows(Mat m, size_t row, size_t n) {
-    return (Mat) {
-        .rows = n,
-        .cols = m.cols,
-        .stride = m.stride,
-        .es = &MAT_AT(m, row, 0),
-    };
+    Mat r;
+    r.rows = n;
+    r.cols = m.cols;
+    r.stride = m.stride;
+    r.es = &MAT_AT(m, row, 0);
+    return r;
 }
 
 __global__ void mat_copy_contiguous_kernel(float* dst, const float* src, size_t area) {
