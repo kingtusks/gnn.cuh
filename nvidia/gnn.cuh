@@ -17,7 +17,7 @@
 #endif //GNN_MALLOC
 
 #ifndef NN_PRINT_INTERVAL
-#define NN_PRINT_INTERVAl 5
+#define NN_PRINT_INTERVAL 5
 #endif //NN_PRINT_INTERVAL
 
 typedef struct {
@@ -27,22 +27,22 @@ typedef struct {
 } NN;
 
 #define ARRAY_LEN(arr) (sizeof((arr)) / sizeof((arr)[0]))
-#define NN_INPUT(nn) (nn).ha[0]
-#define NN_OUTPUT(nn) (nn).ha[(nn).count]
+#define NN_INPUT(nn) (nn).a[0]
+#define NN_OUTPUT(nn) (nn).a[(nn).count]
 #define NN_PRINT(nn) nn_print(nn, #nn)
 
 NN nn_alloc(size_t* dim, size_t dim_len, size_t batch);
 void nn_rand(NN nn, float low, float high);
 void nn_fill(NN nn, float n);
 void nn_forward(NN nn);
-__global__ void nn_cost_kernel(Mat out, Mat y);
+__global__ void nn_cost_kernel(Mat out, Mat y, float* dcost);
 float nn_cost(NN nn, Mat ti, Mat to);
 static void nn_finite_diff_nudge(NN nn, Mat m, Mat gm, Mat ti, Mat to, float eps, float c);
 void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps);
 __global__ void nn_out_grad_kernel(Mat a, Mat y, Mat da, float scale);
 __global__ void nn_sig_grad_kernel(Mat da, Mat a);
 void nn_backprop(NN nn, NN g, Mat ti, Mat to);
-__global__ void nn_learn_kernel(NN nn, NN g, float rate);
+// __global__ void nn_learn_kernel(NN nn, NN g, float rate);
 void nn_learn(NN nn, NN g, float rate);
 void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t iter);
 void nn_print(NN nn, const char* name);
@@ -61,14 +61,14 @@ NN nn_alloc(size_t* dim, size_t dim_len, size_t batch) {
     nn.a = (Mat*) malloc(sizeof_a);
     GNN_ASSERT(nn.w && nn.b && nn.a);
 
-    nn.ha[0] = mat_alloc(batch, dim[0]);
+    NN_INPUT(nn) = mat_alloc(batch, dim[0]);
     for (size_t i = 1; i < dim_len; ++i) {
-        nn.hw[i - 1] = mat_alloc(dim[i - 1], dim[i]);
-        nn.hb[i - 1] = mat_alloc(1, dim[i]);
-        nn.ha[i] = mat_alloc(batch, dim[i]);
+        nn.w[i - 1] = mat_alloc(dim[i - 1], dim[i]);
+        nn.b[i - 1] = mat_alloc(1, dim[i]);
+        nn.a[i] = mat_alloc(batch, dim[i]);
     }
 
-    CUDA_CHECK(cudaMalloc((void**)&dc, sizeof(float));
+    CUDA_CHECK(cudaMalloc((void**)&nn.dc, sizeof(float)));
     return nn;
 }
 
@@ -119,7 +119,7 @@ __global__ void nn_cost_kernel(Mat out, Mat y, float* dcost) {
     }
 
     if (tx == 0)
-        atomicAdd(dcost, sd[0])
+        atomicAdd(dcost, sd[0]);
 }
 
 float nn_cost(NN nn, Mat ti, Mat to) {
@@ -133,7 +133,7 @@ float nn_cost(NN nn, Mat ti, Mat to) {
     CUDA_CHECK(cudaMemset(nn.dc, 0, sizeof(float)));
 
     size_t nb = 0;
-    for (size_t i = 0; i + nn.batch <= ti.rows; i += nn.batch; ++nb) {
+    for (size_t i = 0; i + nn.batch <= ti.rows; i += nn.batch, ++nb) {
         mat_copy(NN_INPUT(nn), mat_rows(ti, i, nn.batch));
         nn_forward(nn);
         nn_cost_kernel<<<blocks, threads, threads * sizeof(float)>>>(NN_OUTPUT(nn), mat_rows(to, i, nn.batch), nn.dc);
@@ -208,10 +208,10 @@ void nn_backprop(NN nn, NN g, Mat ti, Mat to) {
         nn_sig_grad_kernel<<<b2, t>>>(dz, a);
         CUDA_CHECK(cudaGetLastError());
 
-        mat_dot_tn(g.w[l - 1], nn.a[l - 1], dz);
-        mat_colsum(g.b[l - 1], dz);
+        mat_dot_ta(g.w[l - 1], nn.a[l - 1], dz);
+        mat_sum_collapse(g.b[l - 1], dz);
         if (l > 1)
-            mat_dot_nt(g.a[l - 1], dz, nn.w[l - 1]);
+            mat_dot_tb(g.a[l - 1], dz, nn.w[l - 1]);
     }
 }
 
@@ -224,8 +224,8 @@ void nn_learn(NN nn, NN g, float rate) {
 
 void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t epochs) {
     for (size_t i = 0; i < epochs; ++i) {
-        for (size_t s = 0; s + nn.batch <= ti.rows; s += nn.batch) {
-            nn_backprop(nn, g, ti, to);
+        for (size_t j = 0; j + nn.batch <= ti.rows; j += nn.batch) {
+            nn_backprop(nn, g, mat_rows(ti, j, nn.batch), mat_rows(to, j, nn.batch));
             // nn_finite_diff(nn, g, ti, to, 1e-2);
             nn_learn(nn, g, rate);
         }
@@ -237,8 +237,8 @@ void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t epochs) {
 void nn_print(NN nn, const char* name) {
     printf("%s\n", name);
     for (size_t i = 0; i < nn.count; ++i) {
-        mat_print(nn.hw[i], "w");
-        mat_print(nn.hb[i], "b");
+        mat_print(nn.w[i], "w");
+        mat_print(nn.b[i], "b");
     }
     printf("\n");
 }

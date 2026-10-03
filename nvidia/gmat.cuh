@@ -303,7 +303,7 @@ __global__ void mat_sub_scaled_kernel(Mat dst, Mat m, float s) {
     size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
 
     if (i < m.rows && j < m.cols)
-        MAT_AT(dst, i, j) += s * MAT_AT(m, i, j);
+        MAT_AT(dst, i, j) -= s * MAT_AT(m, i, j);
 }
 
 __host__ __device__ void mat_sub_scaled(Mat dst, Mat m, float s) {
@@ -312,7 +312,7 @@ __host__ __device__ void mat_sub_scaled(Mat dst, Mat m, float s) {
 
     dim3 threads(32, 8);
     dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
-    mat_sum_scaled_kernel<<<blocks, threads>>>(dst, m, s);
+    mat_sub_scaled_kernel<<<blocks, threads>>>(dst, m, s);
     CUDA_CHECK(cudaGetLastError());
 }
 
@@ -321,7 +321,7 @@ __global__ void mat_sum_bias_kernel(Mat dst, Mat m) {
     size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
 
     if (i < dst.rows && j < dst.cols)
-        MAT_AT(dst, i, j) += MAT_AT(b, 0, j);
+        MAT_AT(dst, i, j) += MAT_AT(m, 0, j);
 }
 
 __host__ __device__ void mat_sum_bias(Mat dst, Mat m) {
@@ -353,7 +353,7 @@ __host__ __device__ void mat_sum_collapse(Mat dst, Mat m) {
 
     unsigned int threads = 256;
     unsigned int blocks = (unsigned int) ((m.cols + threads - 1) / threads);
-    mat_sum_scaled_kernel<<<blocks, threads>>>(dst, m);
+    mat_sum_collapse_kernel<<<blocks, threads>>>(dst, m);
     CUDA_CHECK(cudaGetLastError());
 }
 
@@ -402,11 +402,11 @@ __global__ void mat_dot_ta_kernel(Mat dst, Mat a, Mat b) {
     size_t j = (size_t) blockIdx.x * TILE + threadIdx.x;
     float res = 0;
 
-    float (size_t t = 0; t < a.rows; t += TILE) {
+    for (size_t t = 0; t < a.rows; t += TILE) {
         size_t ka = t + threadIdx.x;
         size_t kb = t + threadIdx.y;
         As[threadIdx.y][threadIdx.x] = (i < a.cols && ka < a.rows) ? MAT_AT(a, ka, i) : 0;
-        Bs[threadIdx.y][threadIdx.x] = (kb < b.rows && j < a.cols) ? MAT_AT(b, kb, j) : 0;
+        Bs[threadIdx.y][threadIdx.x] = (kb < b.rows && j < b.cols) ? MAT_AT(b, kb, j) : 0;
         __syncthreads();
 
         for (int k = 0; k < TILE; ++k)
@@ -419,7 +419,7 @@ __global__ void mat_dot_ta_kernel(Mat dst, Mat a, Mat b) {
 }
 
 __host__ __device__ void mat_dot_ta(Mat dst, Mat a, Mat b) {
-    GNN_ASSERT(a.cols == b.rows);
+    GNN_ASSERT(a.rows == b.rows);
     GNN_ASSERT(dst.rows == a.cols);
     GNN_ASSERT(dst.cols == b.cols);
 
@@ -438,11 +438,11 @@ __global__ void mat_dot_tb_kernel(Mat dst, Mat a, Mat b) {
     size_t j = (size_t) blockIdx.x * TILE + threadIdx.x;
     float res = 0;
 
-    float (size_t t = 0; t < a.rows; t += TILE) {
+    for (size_t t = 0; t < a.cols; t += TILE) {
         size_t ka = t + threadIdx.x;
         size_t kb = t + threadIdx.y;
         As[threadIdx.y][threadIdx.x] = (i < a.rows && ka < a.cols) ? MAT_AT(a, i, ka) : 0;
-        Bs[threadIdx.y][threadIdx.x] = (kb < b.rows && j < a.cols) ? MAT_AT(b, j, kb) : 0;
+        Bs[threadIdx.y][threadIdx.x] = (j < b.rows && kb < b.cols) ? MAT_AT(b, j, kb) : 0;
         __syncthreads();
 
         for (int k = 0; k < TILE; ++k)
@@ -457,10 +457,10 @@ __global__ void mat_dot_tb_kernel(Mat dst, Mat a, Mat b) {
 __host__ __device__ void mat_dot_tb(Mat dst, Mat a, Mat b) {
     GNN_ASSERT(a.cols == b.cols);
     GNN_ASSERT(dst.rows == a.rows);
-    GNN_ASSERT(dst.cols == b.cols);
+    GNN_ASSERT(dst.cols == b.rows);
 
     dim3 threads(TILE, TILE);
-    dim3 blocks((unsigned int) ((b.cols + TILE - 1) / TILE),
+    dim3 blocks((unsigned int) ((b.rows + TILE - 1) / TILE),
                 (unsigned int) ((a.rows + TILE - 1) / TILE));
     mat_dot_tb_kernel<<<blocks, threads>>>(dst, a, b);
     CUDA_CHECK(cudaGetLastError());
