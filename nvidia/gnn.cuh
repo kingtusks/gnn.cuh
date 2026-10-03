@@ -37,10 +37,10 @@ void nn_fill(NN nn, float n);
 void nn_forward(NN nn);
 __global__ void nn_cost_kernel(Mat out, Mat y);
 float nn_cost(NN nn, Mat ti, Mat to);
+static void nn_finite_diff_nudge(NN nn, Mat m, Mat gm, Mat ti, Mat to, float eps, float c);
 void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps);
-__global__ void nn_backprop_output_kernel(Mat ha_out, Mat hga_out, Mat to_row);
-__global__ void nn_backprop_gradient_kernel(Mat ha_curr, Mat ga_curr, Mat ha_prev, Mat hw_prev, Mat hgw_prev, Mat hgb_prev, Mat hga_prev);
-__global__ void nn_backprop_divider_kernel(NN g, size_t n);
+__global__ void nn_out_grad_kernel(Mat a, Mat y, Mat da, float scale);
+__global__ void nn_sig_grad_kernel(Mat da, Mat a);
 void nn_backprop(NN nn, NN g, Mat ti, Mat to);
 __global__ void nn_learn_kernel(NN nn, NN g, float rate);
 void nn_learn(NN nn, NN g, float rate);
@@ -172,172 +172,75 @@ void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps) {
     }
 }
 
-__global__ void nn_backprop_output_kernel(Mat ha_out, Mat hga_out, Mat to_row) {
+__global__ void nn_out_grad_kernel(Mat a, Mat y, Mat da, float scale) {
+    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
     size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
-    if (j < ha_out.cols)
-        MAT_AT(hga_out, 0, j) = MAT_AT(ha_out, 0, j) - MAT_AT(to_row, 0, j);
+    if (i < a.rows && j < a.cols)
+        MAT_AT(da, i, j) = scale * (MAT_AT(a, i, j) - MAT_AT(y, i, j));
 }
 
-__global__ void nn_backprop_gradient_kernel(Mat ha_curr, Mat ga_curr, Mat ha_prev, Mat hw_prev, Mat hgw_prev, Mat hgb_prev, Mat hga_prev) {
+__global__ void nn_sig_grad_kernel(Mat da, Mat a) {
+    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
     size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
-    size_t k = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    if (j >= ha_curr.cols || k >= ha_prev.cols) return;
-
-    float d = 2 * MAT_AT(ga_curr, 0, j) * MAT_AT(ha_curr, 0, j) * (1 - MAT_AT(ha_curr, 0, j));
-    MAT_AT(hgw_prev, k, j) += d * MAT_AT(ha_prev, 0, k);
-    atomicAdd(&MAT_AT(hga_prev, 0, k), d * MAT_AT(hw_prev, k, j));
-    if (k == 0) MAT_AT(hgb_prev, 0, j) += d;
-}
-
-__global__ void nn_backprop_divider_kernel(NN g, size_t n) {
-    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
-    size_t j = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    size_t k = (size_t) blockIdx.z * blockDim.z + threadIdx.z;
-
-    if (i >= g.count) return;
-
-    if (j < g.w[i].rows && k < g.w[i].cols)
-        MAT_AT(g.w[i], j, k) /= n;
-
-    if (j < g.b[i].rows && k < g.b[i].cols)
-        MAT_AT(g.b[i], j, k) /= n;
+    if (i < a.rows && j < a.cols) {
+        float v = MAT_AT(a, i, j);
+        MAT_AT(da, i, j) *= v * (1.f - v);
+    }
 }
 
 void nn_backprop(NN nn, NN g, Mat ti, Mat to) {
-    GNN_ASSERT(ti.rows == to.rows);
-    size_t sizeof_a = sizeof(Mat) * (nn.count + 1);
-    size_t sizeof_wb = sizeof(Mat) * nn.count;
+    GNN_ASSERT(ti.rows == nn.batch && to.rows == nn.batch);
+    GNN_ASSERT(to.cols == NN_OUTPUT(nn).cols);
 
-    Mat* ha = (Mat*) malloc(sizeof_a);
-    GNN_ASSERT(ha);
-    CUDA_CHECK(cudaMemcpy(ha, nn.a, sizeof_a, cudaMemcpyDeviceToHost));
-    GNN_ASSERT(ha[nn.count].cols == to.cols);
+    mat_copy(NN_INPUT(nn), ti);
+    nn_forward(nn);
 
-    Mat* hw = (Mat*) malloc(sizeof_wb);
-    Mat* hga = (Mat*) malloc(sizeof_a);
-    Mat* hgw = (Mat*) malloc(sizeof_wb);
-    Mat* hgb = (Mat*) malloc(sizeof_wb);
-    GNN_ASSERT(hw && hga && hgw && hgb);
-    CUDA_CHECK(cudaMemcpy(hw, nn.w, sizeof_wb, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(hga, g.a, sizeof_a, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(hgw, g.w, sizeof_wb, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(hgb, g.b, sizeof_wb, cudaMemcpyDeviceToHost));
+    dim3 t(32, 8);
+    Mat out = NN_OUTPUT(nn);
+    dim3 blk((unsigned int) ((out.cols + t.x - 1) / t.x), (unsigned int) ((out.rows + t.y - 1) / t.y));
+    nn_out_grad_kernel<<<blk, t>>>(out, to, g.a[nn.count], 2.f / (float) nn.batch);
+    CUDA_CHECK(cudaGetLastError());
 
-    size_t n = ti.rows;
-    nn_fill(g, 0);
-
-    for (size_t i = 0; i < n; ++i) {
-        mat_copy(ha[0], mat_row(ti, i));
-        nn_forward(nn);
-
-        for (size_t j = 0; j <= nn.count; ++j)
-            mat_fill(hga[j], 0);
-
-        unsigned int output_threads = 256;
-        unsigned int output_blocks = (unsigned int) ((to.cols + output_threads - 1) / output_threads);
-        nn_backprop_output_kernel<<<output_blocks, output_threads>>>(ha[nn.count], hga[nn.count], mat_row(to, i));
+    for (size_t l = nn.count; l > 0; --l) {
+        Mat a = nn.a[l];
+        Mat dz = g.a[l];
+        dim3 b2((unsigned int) ((a.cols + t.x - 1) / t.x), (unsigned int) ((a.rows + t.y - 1) / t.y));
+        nn_sig_grad_kernel<<<b2, t>>>(dz, a);
         CUDA_CHECK(cudaGetLastError());
 
-        for (size_t l = nn.count; l > 0; --l) {
-            dim3 gradient_threads(16, 16);
-            dim3 gradient_blocks(
-                (unsigned int) ((ha[l].cols + gradient_threads.x - 1) / gradient_threads.x),
-                (unsigned int) ((ha[l - 1].cols + gradient_threads.y - 1) / gradient_threads.y)
-            );
-            nn_backprop_gradient_kernel<<<gradient_blocks, gradient_threads>>>(
-                ha[l], hga[l], ha[l - 1], hw[l - 1], hgw[l - 1], hgb[l - 1], hga[l - 1]
-            );
-        }
+        mat_dot_tn(g.w[l - 1], nn.a[l - 1], dz);
+        mat_colsum(g.b[l - 1], dz);
+        if (l > 1)
+            mat_dot_nt(g.a[l - 1], dz, nn.w[l - 1]);
     }
-
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
-
-    size_t max_r = 0;
-    size_t max_c = 0;
-    for (size_t i = 0; i < g.count; ++i) {
-        if (hgw[i].rows > max_r) max_r = hgw[i].rows;
-        if (hgw[i].cols > max_c) max_c = hgw[i].cols;
-    }
-
-    dim3 threads(8, 8, 8);
-    dim3 blocks(
-        (unsigned int) ((nn.count + threads.x - 1) / threads.x),
-        (unsigned int) ((max_r + threads.y - 1) / threads.y),
-        (unsigned int) ((max_c + threads.z - 1) / threads.z)
-    );
-    nn_backprop_divider_kernel<<<blocks, threads>>>(g, n);
-    CUDA_CHECK(cudaGetLastError());
-
-    free(ha);
-    free(hw);
-    free(hga);
-    free(hgw);
-    free(hgb);
-}
-
-__global__ void nn_learn_kernel(NN nn, NN g, float rate) {
-    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
-    size_t j = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    size_t k = (size_t) blockIdx.z * blockDim.z + threadIdx.z;
-
-    if (i >= nn.count) return;
-
-    if (j < nn.w[i].rows && k < nn.w[i].cols)
-        MAT_AT(nn.w[i], j, k) -= rate * MAT_AT(g.w[i], j, k);
-
-    if (j < nn.b[i].rows && k < nn.b[i].cols)
-        MAT_AT(nn.b[i], j, k) -= rate * MAT_AT(g.b[i], j, k);
 }
 
 void nn_learn(NN nn, NN g, float rate) {
-    size_t sizeof_wb = sizeof(Mat) * nn.count;
-    Mat* hw = (Mat*) malloc(sizeof_wb);
-    CUDA_CHECK(cudaMemcpy(hw, nn.w, sizeof_wb, cudaMemcpyDeviceToHost));
-    GNN_ASSERT(hw);
-
-    dim3 threads(8, 8, 8);
-    dim3 blocks(
-        (nn.count + threads.x - 1) / threads.x,
-        (hw[0].rows + threads.y - 1) / threads.y,
-        (hw[0].cols + threads.z - 1) / threads.z
-    );
-
-    free(hw);
-    nn_learn_kernel<<<blocks, threads>>>(nn, g, rate);
-    CUDA_CHECK(cudaGetLastError());
+    for (size_t i = 0; i < nn.count; ++i) {
+        mat_sub_scaled(nn.w[i], g.w[i], rate);
+        mat_sub_scaled(nn.b[i], g.b[i], rate);
+    }
 }
 
-void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t iter) {
-    for (size_t i = 0; i < iter; ++i) {
-#if 1
-        nn_backprop(nn, g, ti, to);
-#else
-        nn_finite_diff(nn, g, ti, to, 1e-2);
-#endif
-        nn_learn(nn, g, rate);
-        printf("%zu: cost: %f\n", i, nn_cost(nn, ti, to));
+void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t epochs) {
+    for (size_t i = 0; i < epochs; ++i) {
+        for (size_t s = 0; s + nn.batch <= ti.rows; s += nn.batch) {
+            nn_backprop(nn, g, ti, to);
+            // nn_finite_diff(nn, g, ti, to, 1e-2);
+            nn_learn(nn, g, rate);
+        }
+        if (i % NN_PRINT_INTERVAL == 0)
+            printf("%zu: cost: %f\n", i, nn_cost(nn, ti, to));
     }
 }
 
 void nn_print(NN nn, const char* name) {
-    size_t sizeof_wb = sizeof(Mat) * nn.count;
-    Mat* hw = (Mat*) malloc(sizeof_wb);
-    Mat* hb = (Mat*) malloc(sizeof_wb);
-    GNN_ASSERT(hw && hb);
-
-    CUDA_CHECK(cudaMemcpy(hw, nn.w, sizeof_wb, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(hb, nn.b, sizeof_wb, cudaMemcpyDeviceToHost));
-
     printf("%s\n", name);
     for (size_t i = 0; i < nn.count; ++i) {
-        mat_print(hw[i], "w");
-        mat_print(hb[i], "b");
+        mat_print(nn.hw[i], "w");
+        mat_print(nn.hb[i], "b");
     }
     printf("\n");
-
-    free(hw);
-    free(hb);
 }
 
 #endif //GNN_IMPLEMENTATION

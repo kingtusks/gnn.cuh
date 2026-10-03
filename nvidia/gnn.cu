@@ -4,7 +4,7 @@
 #include "../mnist/mnist.h"
 
 #define RATE 5
-#define ITER 10000
+#define EPOCHS 10000
 
 float xor_td[] = {
     0, 0, 0,
@@ -59,11 +59,11 @@ void mnist_nn() {
     Mat to = mat_alloc_from(n, MNIST_N_CLASSES, MNIST_STRIDE, mnist_td.data() + MNIST_IMG_SIZE);
 
     size_t dim[] = {784, 128, 64, 10};
-    NN nn = nn_alloc(dim, ARRAY_LEN(dim));
-    NN g = nn_alloc(dim, ARRAY_LEN(dim));
+    NN nn = nn_alloc(dim, ARRAY_LEN(dim), 100);
+    NN g = nn_alloc(dim, ARRAY_LEN(dim), 100);
 
     nn_rand(nn, -10, 10);
-    nn_train(nn, g, ti, to, RATE, ITER);
+    nn_train(nn, g, ti, to, RATE, EPOCHS);
 }
 
 int main() {
