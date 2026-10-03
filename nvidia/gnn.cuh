@@ -42,11 +42,11 @@ void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps);
 __global__ void nn_out_grad_kernel(Mat a, Mat y, Mat da, float scale);
 __global__ void nn_sig_grad_kernel(Mat da, Mat a);
 void nn_backprop(NN nn, NN g, Mat ti, Mat to);
-// __global__ void nn_learn_kernel(NN nn, NN g, float rate);
 void nn_learn(NN nn, NN g, float rate);
-void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t iter);
+void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t epochs);
+__global__ void nn_test_kernel(Mat out, Mat y, float* dcost);
+float nn_test(NN nn, Mat ti, Mat to);
 void nn_print(NN nn, const char* name);
-
 #ifdef GNN_IMPLEMENTATION
 
 NN nn_alloc(size_t* dim, size_t dim_len, size_t batch) {
@@ -232,6 +232,46 @@ void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t epochs) {
         if (i % NN_PRINT_INTERVAL == 0)
             printf("%zu: cost: %f\n", i, nn_cost(nn, ti, to));
     }
+}
+
+__global__ void nn_test_kernel(Mat out, Mat y, float* dcost) {
+    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= out.rows) return;
+
+    size_t po = 0, py = 0;
+    for (size_t j = 1; j < out.cols; ++j) {
+        if (MAT_AT(out, i, j) > MAT_AT(out, i, po)) po = j;
+        if (MAT_AT(y, i, j) > MAT_AT(y, i, py)) py = j;
+    }
+
+    if (po == py) atomicAdd(dcost, 1.f);
+}
+
+float nn_test(NN nn, Mat ti, Mat to) {
+    GNN_ASSERT(ti.rows == to.rows);
+    GNN_ASSERT(to.cols == NN_OUTPUT(nn).cols);
+
+    unsigned int threads = 256;
+    unsigned int blocks = (unsigned int) ((nn.batch + threads - 1) / threads);
+
+    CUDA_CHECK(cudaMemset(nn.dc, 0, sizeof(float)));
+
+    size_t nb = 0;
+    for (size_t i = 0; i + nn.batch <= ti.rows; i += nn.batch, ++nb) {
+        mat_copy(NN_INPUT(nn), mat_rows(ti, i, nn.batch));
+        nn_forward(nn);
+        nn_test_kernel<<<blocks, threads>>>(NN_OUTPUT(nn), mat_rows(to, i, nn.batch), nn.dc);
+        CUDA_CHECK(cudaGetLastError());
+    }
+    GNN_ASSERT(nb > 0);
+
+    float correct;
+    CUDA_CHECK(cudaMemcpy(&correct, nn.dc, sizeof(float), cudaMemcpyDeviceToHost));
+
+    size_t total = nb * nn.batch;
+    float acc = 100.f * correct / (float) total;
+    printf("accuracy: %.2f%% (%d / %zu)\n", acc, (int) correct, total);
+    return acc;
 }
 
 void nn_print(NN nn, const char* name) {

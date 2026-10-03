@@ -4,7 +4,7 @@
 #include "../mnist/mnist.h"
 
 #define RATE 1
-#define EPOCHS 1000
+#define EPOCHS 10000
 
 float xor_td[] = {
     0, 0, 0,
@@ -41,19 +41,22 @@ void xor_nn() {
 
 void mnist_nn() {
     std::vector<float> mnist_td = mnist_load_td("../mnist/data/train-images.idx3-ubyte", "../mnist/data/train-labels.idx1-ubyte", 60000);
-    GNN_ASSERT(!mnist_td.empty());
+    std::vector<float> mnist_ttd = mnist_load_td("../mnist/data/t10k-images.idx3-ubyte", "../mnist/data/t10k-labels.idx1-ubyte", 10000);
+    GNN_ASSERT(!mnist_td.empty() && !mnist_ttd.empty());
 
-    size_t n = 60000;
-    Mat ti = mat_alloc_from(n, MNIST_IMG_SIZE, MNIST_STRIDE, mnist_td.data());
-    Mat to = mat_alloc_from(n, MNIST_N_CLASSES, MNIST_STRIDE, mnist_td.data() + MNIST_IMG_SIZE);
+    Mat ti = mat_alloc_from(60000, MNIST_IMG_SIZE, MNIST_STRIDE, mnist_td.data());
+    Mat to = mat_alloc_from(60000, MNIST_N_CLASSES, MNIST_STRIDE, mnist_td.data() + MNIST_IMG_SIZE);
+    Mat tti = mat_alloc_from(10000, MNIST_IMG_SIZE, MNIST_STRIDE, mnist_ttd.data());
+    Mat tto = mat_alloc_from(10000, MNIST_N_CLASSES, MNIST_STRIDE, mnist_ttd.data() + MNIST_IMG_SIZE);
 
-    size_t batch = 100;
+    size_t batch = 250;
     size_t dim[] = {784, 128, 64, 10};
     NN nn = nn_alloc(dim, ARRAY_LEN(dim), batch);
     NN g = nn_alloc(dim, ARRAY_LEN(dim), batch);
 
     nn_rand(nn, -1, 1);
     nn_train(nn, g, ti, to, RATE, EPOCHS);
+    nn_test(nn, tti, tto);
 }
 
 int main() {
