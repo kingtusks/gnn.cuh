@@ -1,6 +1,6 @@
 # gnn
 
-A small CUDA neural network library in two single-header files, written from scratch with no cuBLAS or ML frameworks.
+A small GPU neural network library in two single-header files, written from scratch with no cuBLAS, rocBLAS, or ML frameworks. Builds for NVIDIA (CUDA) or AMD (HIP) from the same source.
 
 - `gmat.cuh`: GPU matrix primitives
 - `gnn.cuh`: fully connected network, backprop, and mini-batch training
@@ -9,15 +9,27 @@ Reaches **[97.11]%** on MNIST ([training / test] set).
 
 ## Credits
 
-A CUDA port of [tsoding/nn.h](https://github.com/tsoding/nn.h), following his [Machine Learning in C series](https://www.youtube.com/watch?v=PGSba51aRYU&list=PLpM-Dvs8t0VZPZKggcql-MmjaBdZKeDMw).
+Originally supposed to be a CUDA port of [tsoding/nn.h](https://github.com/tsoding/nn.h), following his [Machine Learning in C series](https://www.youtube.com/watch?v=PGSba51aRYU&list=PLpM-Dvs8t0VZPZKggcql-MmjaBdZKeDMw) but later added new things other than FNNs.
 
 ## Build
+
+### NVIDIA (CUDA)
 
 Requires the CUDA toolkit and an NVIDIA GPU.
 
 ```
-nvcc -O2 gnn.cu -o gnn
+nvcc -O2 -arch=native gnn.cu -o gnn
 ```
+
+### AMD (HIP)
+
+Requires ROCm and a supported AMD GPU. Define `GMAT_HIP` to switch the CUDA runtime calls over to HIP, and set `--offload-arch` to your GPU's target (`rocminfo` prints it, for example `gfx1100`).
+
+```
+hipcc -O2 -DGMAT_HIP --offload-arch=gfxXXXX gnn.cu -o gnn
+```
+
+Tested on: [GPU / ROCm version, or "CUDA only so far"].
 
 ## Usage
 
@@ -39,4 +51,5 @@ nn_test(nn, ti, to);                          // prints accuracy
 
 - Sigmoid activation, mean squared error, mini-batch SGD
 - Each layer is one tiled matrix multiply over the whole batch
-- `mat_dot` is hand-written, roughly 15% of cuBLAS.
+- `mat_dot` is hand-written, roughly 15% of cuBLAS on NVIDIA. Not yet measured on AMD.
+- HIP support is a thin compat layer: with `GMAT_HIP` defined, the `cuda*` runtime calls are macro-mapped to their `hip*` equivalents in `gmat.cuh`
