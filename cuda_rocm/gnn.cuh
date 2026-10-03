@@ -223,10 +223,14 @@ void nn_learn(NN nn, NN g, float rate) {
 }
 
 void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t epochs) {
+    nn_rand(nn, -1, 1);
     for (size_t i = 0; i < epochs; ++i) {
         for (size_t j = 0; j + nn.batch <= ti.rows; j += nn.batch) {
+#if 1
             nn_backprop(nn, g, mat_rows(ti, j, nn.batch), mat_rows(to, j, nn.batch));
-            // nn_finite_diff(nn, g, ti, to, 1e-2);
+#else
+            nn_finite_diff(nn, g, ti, to, 1e-2);
+#endif
             nn_learn(nn, g, rate);
         }
         if (i % NN_PRINT_INTERVAL == 0)

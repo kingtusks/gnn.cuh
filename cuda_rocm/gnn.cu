@@ -4,7 +4,7 @@
 #include "../mnist/mnist.h"
 
 #define RATE 1
-#define EPOCHS 10000
+#define EPOCHS 1000
 
 float xor_td[] = {
     0, 0, 0,
@@ -24,7 +24,6 @@ void xor_nn() {
     NN nn = nn_alloc(dim, ARRAY_LEN(dim), 2);
     NN g = nn_alloc(dim, ARRAY_LEN(dim), 2);
 
-    nn_rand(nn, -1, 1);
     nn_train(nn, g, ti, to, RATE, EPOCHS);
 
     for (size_t i = 0; i < 2; ++i) {
@@ -54,7 +53,6 @@ void mnist_nn() {
     NN nn = nn_alloc(dim, ARRAY_LEN(dim), batch);
     NN g = nn_alloc(dim, ARRAY_LEN(dim), batch);
 
-    nn_rand(nn, -1, 1);
     nn_train(nn, g, ti, to, RATE, EPOCHS);
     nn_test(nn, tti, tto);
 }

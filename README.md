@@ -29,7 +29,6 @@ size_t dim[] = {784, 128, 64, 10};
 NN nn = nn_alloc(dim, ARRAY_LEN(dim), 100);   // 100 = batch size
 NN g  = nn_alloc(dim, ARRAY_LEN(dim), 100);   // gradient buffers, same shape
 
-nn_rand(nn, -1, 1);
 nn_train(nn, g, ti, to, 1.0f, 20);            // rate, epochs
 nn_test(nn, ti, to);                          // prints accuracy
 ```

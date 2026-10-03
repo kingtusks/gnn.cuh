@@ -1,8 +1,28 @@
 #pragma once
 
+//maybe idk
+#ifdef GMAT_HIP
+#include <hip/hip_runtime.h>
+#define cudaError_t hipError_t
+#define cudaSuccess hipSuccess
+#define cudaGetErrorString hipGetErrorString
+#define cudaGetLastError hipGetLastError
+#define cudaMalloc hipMalloc
+#define cudaFree hipFree
+#define cudaMemcpy hipMemcpy
+#define cudaMemcpy2D hipMemcpy2D
+#define cudaMemset hipMemset
+#define cudaMemcpyHostToDevice hipMemcpyHostToDevice
+#define cudaMemcpyDeviceToHost hipMemcpyDeviceToHost
+#define __trap() __builtin_trap()
+#define MAT_HOST_DEVICE
+#else
+#include <cuda_runtime.h>
+#define MAT_HOST_DEVICE __host__ __device__
+#endif
+
 #include <cstdio>
 #include <cmath>
-#include <cuda_runtime.h>
 #include <stdint.h>
 
 #ifndef GNN_ASSERT
@@ -28,7 +48,7 @@ typedef struct {
 #define VEC_AT(v, i, j) (v)[(i)*(m).stride + (j)]
 #define MAT_PRINT(m) mat_print(m, #m)
 
-__host__ __device__ void cuda_check(cudaError_t err, const char* file, int line);
+MAT_HOST_DEVICE void cuda_check(cudaError_t err, const char* file, int line);
 #define CUDA_CHECK(call) cuda_check(call, __FILE__, __LINE__)
 
 Mat mat_alloc(size_t rows, size_t cols);
@@ -47,42 +67,42 @@ __global__ void mat_rand_noncontiguous_kernel(Mat m, float low, float high, uint
 void mat_rand_noncontiguous(Mat m, float low, float high, uint64_t seed);
 void mat_rand(Mat m, float low, float high);
 
-__host__ __device__ Mat mat_row(Mat m, size_t row);
-__host__ __device__ Mat mat_rows(Mat m, size_t row, size_t n);
+MAT_HOST_DEVICE Mat mat_row(Mat m, size_t row);
+MAT_HOST_DEVICE Mat mat_rows(Mat m, size_t row, size_t n);
 
 __global__ void mat_copy_contiguous_kernel(float* dst, const float* src, size_t area);
-__host__ __device__ void mat_copy_contiguous(Mat dst, Mat m);
+MAT_HOST_DEVICE void mat_copy_contiguous(Mat dst, Mat m);
 __global__ void mat_copy_noncontiguous_kernel(Mat dst, Mat m);
-__host__ __device__ void mat_copy_noncontiguous(Mat dst, Mat m);
-__host__ __device__ void mat_copy(Mat dst, Mat m);
+MAT_HOST_DEVICE void mat_copy_noncontiguous(Mat dst, Mat m);
+MAT_HOST_DEVICE void mat_copy(Mat dst, Mat m);
 
 __global__ void mat_sub_scaled_kernel(Mat dst, Mat m, float s);
-__host__ __device__ void mat_sub_scaled(Mat dst, Mat m, float s);
+MAT_HOST_DEVICE void mat_sub_scaled(Mat dst, Mat m, float s);
 
 __global__ void mat_sum_bias_kernel(Mat dst, Mat m);
-__host__ __device__ void mat_sum_bias(Mat dst, Mat m);
+MAT_HOST_DEVICE void mat_sum_bias(Mat dst, Mat m);
 __global__ void mat_sum_collapse_kernel(Mat dst, Mat m);
-__host__ __device__ void mat_sum_collapse(Mat dst, Mat m);
+MAT_HOST_DEVICE void mat_sum_collapse(Mat dst, Mat m);
 
 __global__ void mat_sum_contiguous_kernel(float* dst, const float* src, size_t area);
-__host__ __device__ void mat_sum_contiguous(Mat dst, Mat m);
+MAT_HOST_DEVICE void mat_sum_contiguous(Mat dst, Mat m);
 __global__ void mat_sum_noncontiguous_kernel(Mat dst, Mat m);
-__host__ __device__ void mat_sum_noncontiguous(Mat dst, Mat m);
-__host__ __device__ void mat_sum(Mat dst, Mat m);
+MAT_HOST_DEVICE void mat_sum_noncontiguous(Mat dst, Mat m);
+MAT_HOST_DEVICE void mat_sum(Mat dst, Mat m);
 
 __global__ void mat_dot_ta_kernel(Mat dst, Mat a, Mat b);
-__host__ __device__ void mat_dot_ta(Mat dst, Mat a, Mat b);
+MAT_HOST_DEVICE void mat_dot_ta(Mat dst, Mat a, Mat b);
 __global__ void mat_dot_tb_kernel(Mat dst, Mat a, Mat b);
-__host__ __device__ void mat_dot_tb(Mat dst, Mat a, Mat b);
+MAT_HOST_DEVICE void mat_dot_tb(Mat dst, Mat a, Mat b);
 
 __global__ void mat_dot_kernel(Mat dst, Mat a, Mat b);
-__host__ __device__ void mat_dot(Mat dst, Mat a, Mat b);
+MAT_HOST_DEVICE void mat_dot(Mat dst, Mat a, Mat b);
 
 __global__ void mat_sig_contiguous_kernel(float* p, size_t area);
-__host__ __device__ void mat_sig_contiguous(Mat m);
+MAT_HOST_DEVICE void mat_sig_contiguous(Mat m);
 __global__ void mat_sig_noncontiguous_kernel(Mat m);
-__host__ __device__ void mat_sig_noncontiguous(Mat m);
-__host__ __device__ void mat_sig(Mat m);
+MAT_HOST_DEVICE void mat_sig_noncontiguous(Mat m);
+MAT_HOST_DEVICE void mat_sig(Mat m);
 
 __global__ void mat_tanh_contiguous_kernel(float* p, size_t area);
 void mat_tanh_contiguous(Mat m);
@@ -98,19 +118,19 @@ void mat_relu(Mat m);
 
 void mat_print(Mat m, const char *name);
 
-__device__ __forceinline__ float __sigmoidf(float x) {
+static __device__ __forceinline__ float sigmoidf_d(float x) {
     return 1.f / (1.f + expf(-x));
 }
 
-__device__ __forceinline__ float __tanhf(float x) {
-    return (expf(2*x) - 1) / (expf(2*x) + 1);
+static __device__ __forceinline__ float tanhf_d(float x) {
+    return tanhf(x);
 }
 
-__device__ __forceinline__ float __reluf(float x) {
+static __device__ __forceinline__ float reluf_d(float x) {
     return MAX(0, x);
 }
 
-__host__ __device__ __forceinline__ uint64_t splitmix64(uint64_t x) {
+MAT_HOST_DEVICE __forceinline__ uint64_t splitmix64(uint64_t x) {
     x += 0x9E3779B97F4A7C15ULL;
     x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
     x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
@@ -126,8 +146,8 @@ __device__ __forceinline__ float rand_float(uint64_t seed, uint64_t i) {
 
 //CUDA CHECK
 
-__host__ __device__ void cuda_check(cudaError_t err, const char* file, int line) {
-#ifdef __CUDA_ARCH__
+MAT_HOST_DEVICE void cuda_check(cudaError_t err, const char* file, int line) {
+#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     if (err != cudaSuccess) {
         printf("%s:%d CUDA Error: %s\n", file, line, cudaGetErrorString(err));
         __trap();
@@ -244,7 +264,7 @@ void mat_rand(Mat m, float low, float high) {
     (m.stride == m.cols) ? mat_rand_contiguous(m, low, high, seed) : mat_rand_noncontiguous(m, low, high, seed);
 }
 
-__host__ __device__ Mat mat_row(Mat m, size_t row) {
+MAT_HOST_DEVICE Mat mat_row(Mat m, size_t row) {
     return (Mat) {
         .rows = 1,
         .cols = m.cols,
@@ -253,7 +273,7 @@ __host__ __device__ Mat mat_row(Mat m, size_t row) {
     };
 }
 
-__host__ __device__ Mat mat_rows(Mat m, size_t row, size_t n) {
+MAT_HOST_DEVICE Mat mat_rows(Mat m, size_t row, size_t n) {
     return (Mat) {
         .rows = n,
         .cols = m.cols,
@@ -269,7 +289,7 @@ __global__ void mat_copy_contiguous_kernel(float* dst, const float* src, size_t 
     for (; i < area; i += stride) dst[i] = src[i];
 }
 
-__host__ __device__ void mat_copy_contiguous(Mat dst, Mat m) {
+MAT_HOST_DEVICE void mat_copy_contiguous(Mat dst, Mat m) {
     unsigned int threads = 256;
     size_t area = (size_t) m.rows * m.cols;
     unsigned int blocks = (unsigned int) ((area + threads - 1) / threads);
@@ -285,14 +305,14 @@ __global__ void mat_copy_noncontiguous_kernel(Mat dst, Mat m) {
     if (i < m.rows && j < m.cols) MAT_AT(dst, i, j) = MAT_AT(m, i, j);
 }
 
-__host__ __device__ void mat_copy_noncontiguous(Mat dst, Mat m) {
+MAT_HOST_DEVICE void mat_copy_noncontiguous(Mat dst, Mat m) {
     dim3 threads(32, 8);
     dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
     mat_copy_noncontiguous_kernel<<<blocks, threads>>>(dst, m);
     CUDA_CHECK(cudaGetLastError());
 }
 
-__host__ __device__ void mat_copy(Mat dst, Mat m) {
+MAT_HOST_DEVICE void mat_copy(Mat dst, Mat m) {
     (m.stride == m.cols && dst.stride == dst.cols) ? mat_copy_contiguous(dst, m) : mat_copy_noncontiguous(dst, m);
 }
 
@@ -306,7 +326,7 @@ __global__ void mat_sub_scaled_kernel(Mat dst, Mat m, float s) {
         MAT_AT(dst, i, j) -= s * MAT_AT(m, i, j);
 }
 
-__host__ __device__ void mat_sub_scaled(Mat dst, Mat m, float s) {
+MAT_HOST_DEVICE void mat_sub_scaled(Mat dst, Mat m, float s) {
     GNN_ASSERT(dst.rows == m.rows);
     GNN_ASSERT(dst.cols == m.cols);
 
@@ -324,7 +344,7 @@ __global__ void mat_sum_bias_kernel(Mat dst, Mat m) {
         MAT_AT(dst, i, j) += MAT_AT(m, 0, j);
 }
 
-__host__ __device__ void mat_sum_bias(Mat dst, Mat m) {
+MAT_HOST_DEVICE void mat_sum_bias(Mat dst, Mat m) {
     GNN_ASSERT(m.rows == 1);
     GNN_ASSERT(m.cols == dst.cols);
 
@@ -347,7 +367,7 @@ __global__ void mat_sum_collapse_kernel(Mat dst, Mat m) {
     MAT_AT(dst, 0, j) = s;
 }
 
-__host__ __device__ void mat_sum_collapse(Mat dst, Mat m) {
+MAT_HOST_DEVICE void mat_sum_collapse(Mat dst, Mat m) {
     GNN_ASSERT(dst.rows == 1);
     GNN_ASSERT(dst.cols == m.cols);
 
@@ -418,7 +438,7 @@ __global__ void mat_dot_ta_kernel(Mat dst, Mat a, Mat b) {
         MAT_AT(dst, i, j) = res;
 }
 
-__host__ __device__ void mat_dot_ta(Mat dst, Mat a, Mat b) {
+MAT_HOST_DEVICE void mat_dot_ta(Mat dst, Mat a, Mat b) {
     GNN_ASSERT(a.rows == b.rows);
     GNN_ASSERT(dst.rows == a.cols);
     GNN_ASSERT(dst.cols == b.cols);
@@ -454,7 +474,7 @@ __global__ void mat_dot_tb_kernel(Mat dst, Mat a, Mat b) {
         MAT_AT(dst, i, j) = res;
 }
 
-__host__ __device__ void mat_dot_tb(Mat dst, Mat a, Mat b) {
+MAT_HOST_DEVICE void mat_dot_tb(Mat dst, Mat a, Mat b) {
     GNN_ASSERT(a.cols == b.cols);
     GNN_ASSERT(dst.rows == a.rows);
     GNN_ASSERT(dst.cols == b.rows);
@@ -509,7 +529,7 @@ __global__ void mat_sig_contiguous_kernel(float* p, size_t area) {
     size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
     size_t stride = (size_t) gridDim.x * blockDim.x;
 
-    for (; i < area; i += stride) p[i] = __sigmoidf(p[i]);
+    for (; i < area; i += stride) p[i] = sigmoidf_d(p[i]);
 }
 
 void mat_sig_contiguous(Mat m) {
@@ -525,7 +545,7 @@ __global__ void mat_sig_noncontiguous_kernel(Mat m) {
     size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
     size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = __sigmoidf(MAT_AT(m, i, j));
+    if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = sigmoidf_d(MAT_AT(m, i, j));
 }
 
 void mat_sig_noncontiguous(Mat m) {
@@ -543,7 +563,7 @@ __global__ void mat_tanh_contiguous_kernel(float* p, size_t area) {
     size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
     size_t stride = (size_t) gridDim.x * blockDim.x;
 
-    for (; i < area; i += stride) p[i] = __tanhf(p[i]);
+    for (; i < area; i += stride) p[i] = tanhf_d(p[i]);
 }
 
 void mat_tanh_contiguous(Mat m) {
@@ -559,7 +579,7 @@ __global__ void mat_tanh_noncontiguous_kernel(Mat m) {
     size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
     size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = __tanhf(MAT_AT(m, i, j));
+    if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = tanhf_d(MAT_AT(m, i, j));
 }
 
 void mat_tanh_noncontiguous(Mat m) {
@@ -577,7 +597,7 @@ __global__ void mat_relu_contiguous_kernel(float* p, size_t area) {
     size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
     size_t stride = (size_t) gridDim.x * blockDim.x;
 
-    for (; i < area; i += stride) p[i] = __reluf(p[i]);
+    for (; i < area; i += stride) p[i] = reluf_d(p[i]);
 }
 
 void mat_relu_contiguous(Mat m) {
@@ -593,7 +613,7 @@ __global__ void mat_relu_noncontiguous_kernel(Mat m) {
     size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
     size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = __reluf(MAT_AT(m, i, j));
+    if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = reluf_d(MAT_AT(m, i, j));
 }
 
 void mat_relu_noncontiguous(Mat m) {
