@@ -145,7 +145,32 @@ float nn_cost(NN nn, Mat ti, Mat to) {
     CUDA_CHECK(cudaMemcpy(&c, nn.dc, sizeof(float), cudaMemcpyDeviceToHost));
     return c / (float) (nb * nn.batch);
 }
-//finite diff
+
+static void nn_finite_diff_nudge(NN nn, Mat m, Mat gm, Mat ti, Mat to, float eps, float c) {
+    for (size_t j = 0; j < m.rows; ++j) {
+        for (size_t k = 0; k < m.cols; ++k) {
+            float* p = &MAT_AT(m, j, k);
+            float saved, nudged, grad;
+
+            CUDA_CHECK(cudaMemcpy(&saved, p, sizeof(float), cudaMemcpyDeviceToHost));
+            nudged = saved + eps;
+            CUDA_CHECK(cudaMemcpy(p, &nudged, sizeof(float), cudaMemcpyHostToDevice));
+
+            grad = (nn_cost(nn, ti, to) - c) / eps;
+
+            CUDA_CHECK(cudaMemcpy(p, &saved, sizeof(float), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(&MAT_AT(gm, j, k), &grad, sizeof(float), cudaMemcpyHostToDevice));
+        }
+    }
+}
+
+void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps) {
+    float c = nn_cost(nn, ti, to);
+    for (size_t i = 0; i < nn.count; ++i) {
+        nn_finite_diff_nudge(nn, nn.w[i], g.w[i], ti, to, eps, c);
+        nn_finite_diff_nudge(nn, nn.b[i], g.b[i], ti, to, eps, c);
+    }
+}
 
 __global__ void nn_backprop_output_kernel(Mat ha_out, Mat hga_out, Mat to_row) {
     size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
