@@ -18,7 +18,7 @@
 #define MAT_HOST_DEVICE
 #else
 #include <cuda_runtime.h>
-#define MAT_HOST_DEVICE __host__ __device__
+#define MAT_HOST_DEVICE
 #endif
 
 #include <cstdlib>
@@ -131,7 +131,7 @@ static __device__ __forceinline__ float reluf_d(float x) {
     return MAX(0, x);
 }
 
-MAT_HOST_DEVICE __forceinline__ uint64_t splitmix64(uint64_t x) {
+__device__ __forceinline__ uint64_t splitmix64(uint64_t x) {
     x += 0x9E3779B97F4A7C15ULL;
     x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
     x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
