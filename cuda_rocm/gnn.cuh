@@ -40,7 +40,7 @@ float nn_cost(NN nn, Mat ti, Mat to);
 static void nn_finite_diff_nudge(NN nn, Mat m, Mat gm, Mat ti, Mat to, float eps, float c);
 void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps);
 __global__ void nn_out_grad_kernel(Mat a, Mat y, Mat da, float scale);
-__global__ void nn_sig_grad_kernel(Mat da, Mat a);
+__global__ void nn_activation_grad_kernel(Mat da, Mat a);
 void nn_backprop(NN nn, NN g, Mat ti, Mat to);
 void nn_learn(NN nn, NN g, float rate);
 void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t epochs);
@@ -92,11 +92,18 @@ void nn_forward(NN nn) {
     for (size_t i = 0; i < nn.count; ++i) {
         mat_dot(nn.a[i + 1], nn.a[i], nn.w[i]);
         mat_sum_bias(nn.a[i + 1], nn.b[i]);
+#ifdef GNN_SIGMOID
         mat_sig(nn.a[i + 1]);
+#else
+        if (i + 1 < nn.count)
+            mat_relu(nn.a[i + 1]);
+        else
+            mat_softmax(nn.a[i + 1]);
     }
+#endif
 }
 
-__global__ void nn_cost_kernel(Mat out, Mat y, float* dcost) {
+__global__ void nn_cost_sig_kernel(Mat out, Mat y, float* dcost) {
     extern __shared__ float sd[];
     size_t tx = threadIdx.x;
     size_t idx = (size_t) blockIdx.x * blockDim.x + tx;
@@ -106,8 +113,12 @@ __global__ void nn_cost_kernel(Mat out, Mat y, float* dcost) {
     if (idx < area) {
         size_t i = idx / out.cols;
         size_t j = idx % out.cols;
+#ifdef GNN_SIGMOID
         float d = MAT_AT(out, i, j) - MAT_AT(y, i, j);
         v += d*d;
+#else
+        v += -MAT_AT(y, i, j) * logf(fmaxf(MAT_AT(out, i, j), 1e-7f));
+#endif
     }
 
     sd[tx] = v;
@@ -179,13 +190,16 @@ __global__ void nn_out_grad_kernel(Mat a, Mat y, Mat da, float scale) {
         MAT_AT(da, i, j) = scale * (MAT_AT(a, i, j) - MAT_AT(y, i, j));
 }
 
-__global__ void nn_sig_grad_kernel(Mat da, Mat a) {
+__global__ void nn_activation_grad_kernel(Mat da, Mat a) {
     size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
     size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < a.rows && j < a.cols) {
-        float v = MAT_AT(a, i, j);
-        MAT_AT(da, i, j) *= v * (1.f - v);
-    }
+#ifdef GNN_SIGMOID
+    if (i < a.rows && j < a.cols)
+        MAT_AT(da, i, j) *= MAT_AT(a, i, j) * (1.f - v);
+#else
+    if (i < a.rows && j < a.cols && MAT_AT(a, i, j) <= 0.f)
+        MAT_AT(da, i, j) = 0.f;
+#endif
 }
 
 void nn_backprop(NN nn, NN g, Mat ti, Mat to) {
@@ -198,16 +212,27 @@ void nn_backprop(NN nn, NN g, Mat ti, Mat to) {
     dim3 t(32, 8);
     Mat out = NN_OUTPUT(nn);
     dim3 blk((unsigned int) ((out.cols + t.x - 1) / t.x), (unsigned int) ((out.rows + t.y - 1) / t.y));
+#ifdef GNN_SIGMOID
     nn_out_grad_kernel<<<blk, t>>>(out, to, g.a[nn.count], 2.f / (float) nn.batch);
+#else
+    nn_out_grad_kernel<<<blk, t>>>(out, to, g.a[nn.count], 1.f / (float) nn.batch);
+#endif
     CUDA_CHECK(cudaGetLastError());
 
     for (size_t l = nn.count; l > 0; --l) {
         Mat a = nn.a[l];
         Mat dz = g.a[l];
+#ifdef GNN_SIGMOID
         dim3 b2((unsigned int) ((a.cols + t.x - 1) / t.x), (unsigned int) ((a.rows + t.y - 1) / t.y));
-        nn_sig_grad_kernel<<<b2, t>>>(dz, a);
+        nn_activation_grad_kernel<<<b2, t>>>(dz, a);
         CUDA_CHECK(cudaGetLastError());
-
+#else
+        if (l < nn.count) {
+            dim3 b2((unsigned int) ((a.cols + t.x - 1) / t.x), (unsigned int) ((a.rows + t.y - 1) / t.y));
+            nn_activation_grad_kernel<<<b2, t>>>(dz, a);
+            CUDA_CHECK(cudaGetLastError());
+        }
+#endif
         mat_dot_ta(g.w[l - 1], nn.a[l - 1], dz);
         mat_sum_collapse(g.b[l - 1], dz);
         if (l > 1)

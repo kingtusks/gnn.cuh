@@ -106,7 +106,7 @@ MAT_HOST_DEVICE void mat_sig_noncontiguous(Mat m);
 MAT_HOST_DEVICE void mat_sig(Mat m);
 
 __global__ void mat_softmax_kernel(Mat m);
-MAT_HOST_DEVICE mat_softmax(Mat m);
+MAT_HOST_DEVICE void mat_softmax(Mat m);
 
 __global__ void mat_tanh_contiguous_kernel(float* p, size_t area);
 void mat_tanh_contiguous(Mat m);
@@ -134,8 +134,8 @@ static __device__ __forceinline__ float reluf_d(float x) {
     return fmaxf(0.f, x);
 }
 
-static __device__ __forceinline__ float softmaxf_d(Mat m, size_t i) {
-    float x = MAT_AT(m, i, 0)
+static __device__ __forceinline__ void softmaxf_d(Mat m, size_t i) {
+    float x = MAT_AT(m, i, 0);
     for (size_t j = 1; j < m.cols; ++j)
         MAT_AT(m, i, 0) += fmaxf(x, MAT_AT(m, i, j));
 
@@ -649,10 +649,10 @@ void mat_relu(Mat m) {
 
 __global__ void mat_softmax_kernel(Mat m) {
     size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < m.rows) softmax_row_d(m, i);
+    if (i < m.rows) softmaxf_d(m, i);
 }
 
-MAT_HOST_DEVICE mat_softmax(Mat m) {
+MAT_HOST_DEVICE void mat_softmax(Mat m) {
     unsigned int threads = 256;
     unsigned int blocks = (unsigned int) ((m.rows + threads - 1) / threads);
     mat_softmax_kernel<<<blocks, threads>>>(m);
