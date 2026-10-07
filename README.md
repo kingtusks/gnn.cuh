@@ -5,7 +5,8 @@ A small GPU neural network library in two single-header files, written from scra
 - `gmat.cuh`: GPU matrix primitives
 - `gnn.cuh`: fully connected network, backprop, and mini-batch training
 
-Reaches **[97.11]%** on MNIST ([training / test] set).
+Reaches **[98.13]%** on MNIST (test set).
+> Rate: 1e-1, Epochs: 450, Batch Size: 100
 
 ## Credits
 
