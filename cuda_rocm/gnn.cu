@@ -1,10 +1,11 @@
+// #define GNN_SIGMOID
 #define GNN_IMPLEMENTATION
 #include "gnn.cuh"
 #define MNIST_IMPLEMENTATION
 #include "../mnist/mnist.h"
 
-#define RATE 1
-#define EPOCHS 1000
+#define RATE 0.01
+#define EPOCHS 100
 
 float xor_td[] = {
     0, 0, 0,
@@ -48,11 +49,12 @@ void mnist_nn() {
     Mat tti = mat_alloc_from(10000, MNIST_IMG_SIZE, MNIST_STRIDE, mnist_ttd.data());
     Mat tto = mat_alloc_from(10000, MNIST_N_CLASSES, MNIST_STRIDE, mnist_ttd.data() + MNIST_IMG_SIZE);
 
-    size_t batch = 50;
+    size_t batch = 100;
     size_t dim[] = {784, 128, 64, 10};
     NN nn = nn_alloc(dim, ARRAY_LEN(dim), batch);
     NN g = nn_alloc(dim, ARRAY_LEN(dim), batch);
 
+    nn_rand_he(nn);
     nn_train(nn, g, ti, to, RATE, EPOCHS);
     nn_test(nn, tti, tto);
 }

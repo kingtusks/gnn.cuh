@@ -33,6 +33,7 @@ typedef struct {
 
 NN nn_alloc(size_t* dim, size_t dim_len, size_t batch);
 void nn_rand(NN nn, float low, float high);
+void nn_rand_he(NN nn);
 void nn_fill(NN nn, float n);
 void nn_forward(NN nn);
 __global__ void nn_cost_kernel(Mat out, Mat y, float* dcost);
@@ -79,6 +80,14 @@ void nn_rand(NN nn, float low, float high) {
     }
 }
 
+void nn_rand_he(NN nn) {
+    for (size_t i = 0; i < nn.count; ++i) {
+        float lim = sqrtf(6.f / (float) nn.w[i].rows);
+        mat_rand(nn.w[i], -lim, lim);
+        mat_fill(nn.b[i], 0.f);
+    }
+}
+
 void nn_fill(NN nn, float n) {
     for (size_t i = 0; i < nn.count; ++i) {
         mat_fill(nn.w[i], n);
@@ -95,15 +104,13 @@ void nn_forward(NN nn) {
 #ifdef GNN_SIGMOID
         mat_sig(nn.a[i + 1]);
 #else
-        if (i + 1 < nn.count)
-            mat_relu(nn.a[i + 1]);
-        else
-            mat_softmax(nn.a[i + 1]);
-    }
+        if (i + 1 < nn.count) mat_relu(nn.a[i + 1]);
+        else mat_softmax(nn.a[i + 1]);
 #endif
+    }
 }
 
-__global__ void nn_cost_sig_kernel(Mat out, Mat y, float* dcost) {
+__global__ void nn_cost_kernel(Mat out, Mat y, float* dcost) {
     extern __shared__ float sd[];
     size_t tx = threadIdx.x;
     size_t idx = (size_t) blockIdx.x * blockDim.x + tx;
@@ -117,7 +124,7 @@ __global__ void nn_cost_sig_kernel(Mat out, Mat y, float* dcost) {
         float d = MAT_AT(out, i, j) - MAT_AT(y, i, j);
         v += d*d;
 #else
-        v += -MAT_AT(y, i, j) * logf(fmaxf(MAT_AT(out, i, j), 1e-7f));
+        v += -MAT_AT(y, i, j) * logf(MAT_AT(out, i, j)) + 1e-7f;
 #endif
     }
 
@@ -194,8 +201,10 @@ __global__ void nn_activation_grad_kernel(Mat da, Mat a) {
     size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
     size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
 #ifdef GNN_SIGMOID
-    if (i < a.rows && j < a.cols)
-        MAT_AT(da, i, j) *= MAT_AT(a, i, j) * (1.f - v);
+    if (i < a.rows && j < a.cols) {
+        float v = MAT_AT(a, i, j);
+        MAT_AT(da, i, j) *= v * (1.f - v);
+    }
 #else
     if (i < a.rows && j < a.cols && MAT_AT(a, i, j) <= 0.f)
         MAT_AT(da, i, j) = 0.f;
@@ -248,7 +257,6 @@ void nn_learn(NN nn, NN g, float rate) {
 }
 
 void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t epochs) {
-    nn_rand(nn, -1, 1);
     for (size_t i = 0; i < epochs; ++i) {
         for (size_t j = 0; j + nn.batch <= ti.rows; j += nn.batch) {
 #if 1
