@@ -4,8 +4,8 @@
 #define MNIST_IMPLEMENTATION
 #include "../mnist/mnist.h"
 
-#define RATE 0.01
-#define EPOCHS 100
+#define RATE 1e-1
+#define EPOCHS 450
 
 float xor_td[] = {
     0, 0, 0,

@@ -147,7 +147,7 @@ static __device__ __forceinline__ float leaky_reluf_d(float x) {
 static __device__ __forceinline__ void softmaxf_d(Mat m, size_t i) {
     float x = MAT_AT(m, i, 0);
     for (size_t j = 1; j < m.cols; ++j)
-        MAT_AT(m, i, 0) = fmaxf(x, MAT_AT(m, i, j));
+        x = fmaxf(x, MAT_AT(m, i, j));
 
     float s = 0;
     for (size_t j = 0; j < m.cols; ++j) {

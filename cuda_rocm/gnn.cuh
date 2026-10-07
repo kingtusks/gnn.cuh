@@ -97,14 +97,14 @@ void nn_fill(NN nn, float n) {
     mat_fill(NN_OUTPUT(nn), n);
 }
 
-void nn_forward(NN nn) {
-    for (size_t i = 0; i < nn.count; ++i) {
+void nn_forward(NN nn) { for (size_t i = 0; i < nn.count; ++i) {
         mat_dot(nn.a[i + 1], nn.a[i], nn.w[i]);
         mat_sum_bias(nn.a[i + 1], nn.b[i]);
 #ifdef GNN_SIGMOID
         mat_sig(nn.a[i + 1]);
 #else
-        if (i + 1 < nn.count) mat_relu(nn.a[i + 1]);
+        if (i + 1 < nn.count) mat_leaky_relu(nn.a[i + 1]);
+        // if (i + 1 < nn.count) mat_relu(nn.a[i + 1]);
         else mat_softmax(nn.a[i + 1]);
 #endif
     }
@@ -124,7 +124,10 @@ __global__ void nn_cost_kernel(Mat out, Mat y, float* dcost) {
         float d = MAT_AT(out, i, j) - MAT_AT(y, i, j);
         v += d*d;
 #else
-        v += -MAT_AT(y, i, j) * logf(MAT_AT(out, i, j)) + 1e-7f;
+        // below code makes the cost return 20.723... except of nan (which is good but weird as it gets stuck there)
+        // we can deduce MAT_AT(out, i, j) is less than 1e-9 thus it hangs on 1e-9
+        // v += -MAT_AT(y, i, j) * logf(fmaxf(MAT_AT(out, i, j), 1e-9)) + 1e-7f;
+        v += -MAT_AT(y, i, j) * logf(MAT_AT(out, i, j) + 1e-7f);
 #endif
     }
 
@@ -207,7 +210,7 @@ __global__ void nn_activation_grad_kernel(Mat da, Mat a) {
     }
 #else
     if (i < a.rows && j < a.cols && MAT_AT(a, i, j) <= 0.f)
-        MAT_AT(da, i, j) = 0.f;
+        MAT_AT(da, i, j) *= 0.01f;
 #endif
 }
 
