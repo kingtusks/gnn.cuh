@@ -5,7 +5,7 @@
 #include "../mnist/mnist.h"
 
 #define RATE 1e-1
-#define EPOCHS 450
+#define EPOCHS 10
 
 float xor_td[] = {
     0, 0, 0,
@@ -57,6 +57,7 @@ void mnist_nn() {
     nn_rand_he(nn);
     nn_train(nn, g, ti, to, RATE, EPOCHS);
     nn_test(nn, tti, tto);
+    nn_free(nn);
 }
 
 int main() {

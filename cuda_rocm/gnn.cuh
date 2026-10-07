@@ -38,7 +38,6 @@ void nn_fill(NN nn, float n);
 void nn_forward(NN nn);
 __global__ void nn_cost_kernel(Mat out, Mat y, float* dcost);
 float nn_cost(NN nn, Mat ti, Mat to);
-static void nn_finite_diff_nudge(NN nn, Mat m, Mat gm, Mat ti, Mat to, float eps, float c);
 void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps);
 __global__ void nn_out_grad_kernel(Mat a, Mat y, Mat da, float scale);
 __global__ void nn_activation_grad_kernel(Mat da, Mat a);
@@ -47,7 +46,64 @@ void nn_learn(NN nn, NN g, float rate);
 void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t epochs);
 __global__ void nn_test_kernel(Mat out, Mat y, float* dcost);
 float nn_test(NN nn, Mat ti, Mat to);
+void nn_free(NN nn);
+void nn_save(NN nn, const char* path);
+void nn_load(NN nn, const char* path);
 void nn_print(NN nn, const char* name);
+
+static void nn_finite_diff_nudge(NN nn, Mat m, Mat gm, Mat ti, Mat to, float eps, float c) {
+    for (size_t j = 0; j < m.rows; ++j) {
+        for (size_t k = 0; k < m.cols; ++k) {
+            float* p = &MAT_AT(m, j, k);
+            float saved, nudged, grad;
+
+            CUDA_CHECK(cudaMemcpy(&saved, p, sizeof(float), cudaMemcpyDeviceToHost));
+            nudged = saved + eps;
+            CUDA_CHECK(cudaMemcpy(p, &nudged, sizeof(float), cudaMemcpyHostToDevice));
+
+            grad = (nn_cost(nn, ti, to) - c) / eps;
+
+            CUDA_CHECK(cudaMemcpy(p, &saved, sizeof(float), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(&MAT_AT(gm, j, k), &grad, sizeof(float), cudaMemcpyHostToDevice));
+        }
+    }
+}
+
+static void nn_write_u64(FILE* f, uint64_t n) {
+    size_t ok = fwrite(&v, sizeof(v), 1, f);
+    GNN_ASSERT(ok == 1);
+    (void) ok;
+}
+
+static uint64_t nn_read_u64(FILE* f) {
+    uint64_t v = 0;
+    size_t ok = fread(&v, sizeof(v), 1, f);
+    GNN_ASSERT(ok == 1);
+    (void) ok;
+}
+
+static void nn_mat_write(FILE* f, Mat m) {
+    size_t n = m.rows * m.cols;
+    float* h = (float*) malloc(n * sizeof(float));
+    GNN_ASSERT(h);
+    CUDA_CHECK(cudaMemcpy(h, m.es, n * sizeof(float), cudaMemcpyDeviceToHost));
+    size_t ok = fwrite(h, sizeof(float), n, f);
+    GNN_ASSERT(ok == n);
+    (void) ok;
+    free(h);
+}
+
+static void nn_mat_read(FILE* f, Mat m) {
+    size_t n = m.rows * m.cols;
+    float* h = (float*) malloc(n * sizeof(float));
+    GNN_ASSERT(h);
+    size_t ok = fread(h, sizeof(float), n, f);
+    GNN_ASSERT(ok == n);
+    (void) ok;
+    CUDA_CHECK(cudaMemcpy(m.es, h, n * sizeof(float), cudaMemcpyHostToDevice));
+    free(h);
+}
+
 #ifdef GNN_IMPLEMENTATION
 
 NN nn_alloc(size_t* dim, size_t dim_len, size_t batch) {
@@ -167,24 +223,6 @@ float nn_cost(NN nn, Mat ti, Mat to) {
     return c / (float) (nb * nn.batch);
 }
 
-static void nn_finite_diff_nudge(NN nn, Mat m, Mat gm, Mat ti, Mat to, float eps, float c) {
-    for (size_t j = 0; j < m.rows; ++j) {
-        for (size_t k = 0; k < m.cols; ++k) {
-            float* p = &MAT_AT(m, j, k);
-            float saved, nudged, grad;
-
-            CUDA_CHECK(cudaMemcpy(&saved, p, sizeof(float), cudaMemcpyDeviceToHost));
-            nudged = saved + eps;
-            CUDA_CHECK(cudaMemcpy(p, &nudged, sizeof(float), cudaMemcpyHostToDevice));
-
-            grad = (nn_cost(nn, ti, to) - c) / eps;
-
-            CUDA_CHECK(cudaMemcpy(p, &saved, sizeof(float), cudaMemcpyHostToDevice));
-            CUDA_CHECK(cudaMemcpy(&MAT_AT(gm, j, k), &grad, sizeof(float), cudaMemcpyHostToDevice));
-        }
-    }
-}
-
 void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps) {
     float c = nn_cost(nn, ti, to);
     for (size_t i = 0; i < nn.count; ++i) {
@@ -209,8 +247,7 @@ __global__ void nn_activation_grad_kernel(Mat da, Mat a) {
         MAT_AT(da, i, j) *= v * (1.f - v);
     }
 #else
-    if (i < a.rows && j < a.cols && MAT_AT(a, i, j) <= 0.f)
-        MAT_AT(da, i, j) *= 0.01f;
+    if (i < a.rows && j < a.cols && MAT_AT(a, i, j) <= 0.f) MAT_AT(da, i, j) *= 0.01f;
 #endif
 }
 
@@ -260,13 +297,9 @@ void nn_learn(NN nn, NN g, float rate) {
 }
 
 void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t epochs) {
-    for (size_t i = 0; i < epochs; ++i) {
+    for (size_t i = 1; i <= epochs; ++i) {
         for (size_t j = 0; j + nn.batch <= ti.rows; j += nn.batch) {
-#if 1
             nn_backprop(nn, g, mat_rows(ti, j, nn.batch), mat_rows(to, j, nn.batch));
-#else
-            nn_finite_diff(nn, g, ti, to, 1e-2);
-#endif
             nn_learn(nn, g, rate);
         }
         if (i % NN_PRINT_INTERVAL == 0)
@@ -312,6 +345,55 @@ float nn_test(NN nn, Mat ti, Mat to) {
     float acc = 100.f * correct / (float) total;
     printf("accuracy: %.2f%% (%d / %zu)\n", acc, (int) correct, total);
     return acc;
+}
+
+void nn_free(NN nn) {
+    for (size_t i = 0; i < nn.count; ++i) {
+        CUDA_CHECK(cudaFree(nn.w[i].es));
+        CUDA_CHECK(cudaFree(nn.b[i].es));
+        CUDA_CHECK(cudaFree(nn.a[i].es));
+    }
+    CUDA_CHECK(cudaFree(nn.a[nn.count].es));
+    CUDA_CHECK(cudaFree(nn.dc));
+    free(nn.w);
+    free(nn.b);
+    free(nn.a);
+}
+
+void nn_save(NN nn, const char* path) {
+    FILE* f = fopen(path, "wb");
+    GNN_ASSERT(f);
+
+    nn_write_u64(f, nn.count);
+    for (size_t i = 0; i < nn.count; ++i) {
+        nn_write_u64(f, nn.w[i].rows);
+        nn_write_u64(f, nn.w[i].cols);
+        nn_mat_write(f, nn.w[i]);
+        nn_mat_write(f, nn.b[i]);
+    }
+
+    fclose(f);
+}
+
+void nn_load(NN nn, const char* path) {
+    FILE* f = fopen(path, "rb");
+    GNN_ASSERT(f);
+
+    uint64_t count = nn_read_u64(f);
+    GNN_ASSERT(count == nn.count);
+    (void) count;
+
+    for (size_t i = 0; i < nn.count; ++i) {
+        uint64_t r = nn_read_u64(f);
+        uint64_t c = nn_read_u64(f);
+        GNN_ASSERT(r == nn.w[i].rows && c == nn.w[i].cols);
+        (void) r;
+        (void) c;
+        nn_mat_read(f, nn.w[i]);
+        nn_mat_read(f, nn.b[i]);
+    }
+
+    fclose(f);
 }
 
 void nn_print(NN nn, const char* name) {
