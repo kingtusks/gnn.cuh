@@ -42,7 +42,8 @@ void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps);
 __global__ void nn_out_grad_kernel(Mat a, Mat y, Mat da, float scale);
 __global__ void nn_activation_grad_kernel(Mat da, Mat a);
 void nn_backprop(NN nn, NN g, Mat ti, Mat to);
-void nn_learn(NN nn, NN g, float rate);
+void nn_sgd(NN nn, NN g, float rate);
+void nn_momentum(NN nn, NN g, float rate);
 void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t epochs);
 __global__ void nn_test_kernel(Mat out, Mat y, float* dcost);
 float nn_test(NN nn, Mat ti, Mat to);
@@ -289,10 +290,21 @@ void nn_backprop(NN nn, NN g, Mat ti, Mat to) {
     }
 }
 
-void nn_learn(NN nn, NN g, float rate) {
+void nn_sgd(NN nn, NN g, float rate) {
     for (size_t i = 0; i < nn.count; ++i) {
         mat_sub_scaled(nn.w[i], g.w[i], rate);
         mat_sub_scaled(nn.b[i], g.b[i], rate);
+    }
+}
+
+void nn_momentum(NN nn, NN g, float rate) {
+    float vw = 0;
+    float vb = 0;
+    for (size_t i = 0; i < nn.count; ++i) {
+        vw = 0.9 * v + g.w[i];
+        vb = 0.9 * v + g.b[i];
+        mat_sub_scaled(nn.w[i], vw, rate);
+        mat_sub_scaled(nn.b[i], vb, rate);
     }
 }
 
@@ -300,7 +312,7 @@ void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t epochs) {
     for (size_t i = 1; i <= epochs; ++i) {
         for (size_t j = 0; j + nn.batch <= ti.rows; j += nn.batch) {
             nn_backprop(nn, g, mat_rows(ti, j, nn.batch), mat_rows(to, j, nn.batch));
-            nn_learn(nn, g, rate);
+            nn_sgd(nn, g, rate);
         }
         if (i % NN_PRINT_INTERVAL == 0)
             printf("%zu: cost: %f\n", i, nn_cost(nn, ti, to));
