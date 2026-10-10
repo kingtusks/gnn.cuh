@@ -77,8 +77,11 @@ __global__ void mat_copy_noncontiguous_kernel(Mat dst, Mat m);
 MAT_HOST_DEVICE void mat_copy_noncontiguous(Mat dst, Mat m);
 MAT_HOST_DEVICE void mat_copy(Mat dst, Mat m);
 
-__global__ void mat_sub_scaled_kernel(Mat dst, Mat m, float s);
-MAT_HOST_DEVICE void mat_sub_scaled(Mat dst, Mat m, float s);
+__global__ void mat_sgd_helper_kernel(Mat dst, Mat m, float s);
+MAT_HOST_DEVICE void mat_sgd_helper(Mat dst, Mat m, float s);
+
+__global__ void mat_momentum_helper_kernel(Mat dst, Mat m, Mat v, Mat rate);
+MAT_HOST_DEVICE void mat_momentum_helper(Mat dst, Mat m, Mat v, Mat rate);
 
 __global__ void mat_sum_bias_kernel(Mat dst, Mat m);
 MAT_HOST_DEVICE void mat_sum_bias(Mat dst, Mat m);
@@ -348,7 +351,7 @@ MAT_HOST_DEVICE void mat_copy(Mat dst, Mat m) {
 
 //MATRIX OPS
 
-__global__ void mat_sub_scaled_kernel(Mat dst, Mat m, float s) {
+__global__ void mat_sgd_helper_kernel(Mat dst, Mat m, float s) {
     size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
     size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -356,13 +359,37 @@ __global__ void mat_sub_scaled_kernel(Mat dst, Mat m, float s) {
         MAT_AT(dst, i, j) -= s * MAT_AT(m, i, j);
 }
 
-MAT_HOST_DEVICE void mat_sub_scaled(Mat dst, Mat m, float s) {
+MAT_HOST_DEVICE void mat_sgd_helper(Mat dst, Mat m, float s) {
     GNN_ASSERT(dst.rows == m.rows);
     GNN_ASSERT(dst.cols == m.cols);
 
     dim3 threads(32, 8);
     dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
-    mat_sub_scaled_kernel<<<blocks, threads>>>(dst, m, s);
+    mat_sgd_helper_kernel<<<blocks, threads>>>(dst, m, s);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+__global__ void mat_momentum_helper_kernel(Mat dst, Mat m, Mat v, float rate) {
+    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
+    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i < dst.rows && j < dst.cols) {
+        float vel = 0.9f * MAT_AT(v, i, j) + MAT_AT(m, i, j);
+        MAT_AT(v, i, j) = vel;
+        MAT_AT(dst, i, j) -= rate * vel;
+    }
+}
+
+MAT_HOST_DEVICE void mat_momentum_helper(Mat dst, Mat m, Mat v, float rate) {
+    GNN_ASSERT(dst.rows == m.rows);
+    GNN_ASSERT(dst.cols == m.cols);
+    GNN_ASSERT(dst.rows == v.rows);
+    GNN_ASSERT(dst.cols == v.cols);
+
+    dim3 threads(32, 8);
+    dim3 blocks((unsigned int) ((dst.cols + threads.x - 1) / threads.x),
+                (unsigned int) ((dst.rows + threads.y - 1) / threads.y));
+    mat_momentum_helper_kernel<<<blocks, threads>>>(dst, m, v, rate);
     CUDA_CHECK(cudaGetLastError());
 }
 

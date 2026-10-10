@@ -43,7 +43,7 @@ __global__ void nn_out_grad_kernel(Mat a, Mat y, Mat da, float scale);
 __global__ void nn_activation_grad_kernel(Mat da, Mat a);
 void nn_backprop(NN nn, NN g, Mat ti, Mat to);
 void nn_sgd(NN nn, NN g, float rate);
-void nn_momentum(NN nn, NN g, float rate);
+void nn_momentum(NN nn, NN g, NN v, float rate);
 void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t epochs);
 __global__ void nn_test_kernel(Mat out, Mat y, float* dcost);
 float nn_test(NN nn, Mat ti, Mat to);
@@ -71,7 +71,7 @@ static void nn_finite_diff_nudge(NN nn, Mat m, Mat gm, Mat ti, Mat to, float eps
 }
 
 static void nn_write_u64(FILE* f, uint64_t n) {
-    size_t ok = fwrite(&v, sizeof(v), 1, f);
+    size_t ok = fwrite(&n, sizeof(n), 1, f);
     GNN_ASSERT(ok == 1);
     (void) ok;
 }
@@ -81,6 +81,7 @@ static uint64_t nn_read_u64(FILE* f) {
     size_t ok = fread(&v, sizeof(v), 1, f);
     GNN_ASSERT(ok == 1);
     (void) ok;
+    return v;
 }
 
 static void nn_mat_write(FILE* f, Mat m) {
@@ -292,19 +293,16 @@ void nn_backprop(NN nn, NN g, Mat ti, Mat to) {
 
 void nn_sgd(NN nn, NN g, float rate) {
     for (size_t i = 0; i < nn.count; ++i) {
-        mat_sub_scaled(nn.w[i], g.w[i], rate);
-        mat_sub_scaled(nn.b[i], g.b[i], rate);
+        mat_sgd_helper(nn.w[i], g.w[i], rate);
+        mat_sgd_helper(nn.b[i], g.b[i], rate);
     }
 }
 
-void nn_momentum(NN nn, NN g, float rate) {
-    float vw = 0;
-    float vb = 0;
+// TODO: ADJUST CODE TO USE ANY LEARNING ALGO (enums?)
+void nn_momentum(NN nn, NN g, NN v, float rate) {
     for (size_t i = 0; i < nn.count; ++i) {
-        vw = 0.9 * v + g.w[i];
-        vb = 0.9 * v + g.b[i];
-        mat_sub_scaled(nn.w[i], vw, rate);
-        mat_sub_scaled(nn.b[i], vb, rate);
+        mat_momentum_helper(nn.w[i], g.w[i], v.w[i], rate);
+        mat_momentum_helper(nn.b[i], g.b[i], v.b[i], rate);
     }
 }
 
