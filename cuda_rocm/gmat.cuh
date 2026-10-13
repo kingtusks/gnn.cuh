@@ -374,9 +374,8 @@ __global__ void mat_momentum_helper_kernel(Mat dst, Mat m, Mat v, float rate) {
     size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
 
     if (i < dst.rows && j < dst.cols) {
-        float vel = 0.9f * MAT_AT(v, i, j) + MAT_AT(m, i, j);
-        MAT_AT(v, i, j) = vel;
-        MAT_AT(dst, i, j) -= rate * vel;
+        MAT_AT(v, i, j) = 0.9f * MAT_AT(v, i, j) + MAT_AT(m, i, j);
+        MAT_AT(dst, i, j) -= rate * MAT_AT(v, i, j);
     }
 }
 

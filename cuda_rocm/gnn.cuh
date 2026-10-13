@@ -26,6 +26,12 @@ typedef struct {
     float *dc;
 } NN;
 
+enum class Optimizer {
+    SGD,
+    SGDMomentum,
+    Adam
+};
+
 #define ARRAY_LEN(arr) (sizeof((arr)) / sizeof((arr)[0]))
 #define NN_INPUT(nn) (nn).a[0]
 #define NN_OUTPUT(nn) (nn).a[(nn).count]
@@ -44,7 +50,8 @@ __global__ void nn_activation_grad_kernel(Mat da, Mat a);
 void nn_backprop(NN nn, NN g, Mat ti, Mat to);
 void nn_sgd(NN nn, NN g, float rate);
 void nn_momentum(NN nn, NN g, NN v, float rate);
-void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t epochs);
+// void nn_train(NN nn, NN g, NN v, Mat ti, Mat to, size_t epochs, float rate, Optimizer opt);
+void nn_train(NN nn, NN g, NN v, Mat ti, Mat to, size_t epochs, float rate = 1e-3, Optimizer opt = Optimizer::SGD);
 __global__ void nn_test_kernel(Mat out, Mat y, float* dcost);
 float nn_test(NN nn, Mat ti, Mat to);
 void nn_free(NN nn);
@@ -298,7 +305,6 @@ void nn_sgd(NN nn, NN g, float rate) {
     }
 }
 
-// TODO: ADJUST CODE TO USE ANY LEARNING ALGO (enums?)
 void nn_momentum(NN nn, NN g, NN v, float rate) {
     for (size_t i = 0; i < nn.count; ++i) {
         mat_momentum_helper(nn.w[i], g.w[i], v.w[i], rate);
@@ -306,11 +312,21 @@ void nn_momentum(NN nn, NN g, NN v, float rate) {
     }
 }
 
-void nn_train(NN nn, NN g, Mat ti, Mat to, float rate, size_t epochs) {
+void nn_train(NN nn, NN g, NN v, Mat ti, Mat to, size_t epochs, float rate, Optimizer opt) {
     for (size_t i = 1; i <= epochs; ++i) {
         for (size_t j = 0; j + nn.batch <= ti.rows; j += nn.batch) {
             nn_backprop(nn, g, mat_rows(ti, j, nn.batch), mat_rows(to, j, nn.batch));
-            nn_sgd(nn, g, rate);
+            switch (opt) {
+                case Optimizer::SGD:
+                    nn_sgd(nn, g, rate);
+                    break;
+                case Optimizer::SGDMomentum:
+                    nn_momentum(nn, g, v, rate);
+                    break;
+                case Optimizer::Adam:
+                    // TODO: MAKE ADAM OPTIMIZER
+                    break;
+            }
         }
         if (i % NN_PRINT_INTERVAL == 0)
             printf("%zu: cost: %f\n", i, nn_cost(nn, ti, to));

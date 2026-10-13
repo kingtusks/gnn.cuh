@@ -24,8 +24,11 @@ void xor_nn() {
     size_t dim[] = {2, 2, 1};
     NN nn = nn_alloc(dim, ARRAY_LEN(dim), 2);
     NN g = nn_alloc(dim, ARRAY_LEN(dim), 2);
+    NN v = nn_alloc(dim, ARRAY_LEN(dim), 2);
 
-    nn_train(nn, g, ti, to, RATE, EPOCHS);
+    nn_rand_he(nn);
+    nn_fill(v, 0);
+    nn_train(nn, g, v, ti, to, EPOCHS);
 
     for (size_t i = 0; i < 2; ++i) {
         for (size_t j = 0; j < 2; ++j) {
@@ -37,6 +40,8 @@ void xor_nn() {
             printf("%zu ^ %zu = %f\n", i, j, y);
         }
     }
+
+    nn_free(nn); nn_free(g); nn_free(v);
 }
 
 void mnist_nn() {
@@ -53,18 +58,18 @@ void mnist_nn() {
     size_t dim[] = {784, 128, 64, 10};
     NN nn = nn_alloc(dim, ARRAY_LEN(dim), batch);
     NN g = nn_alloc(dim, ARRAY_LEN(dim), batch);
+    NN v = nn_alloc(dim, ARRAY_LEN(dim), batch);
 
     nn_rand_he(nn);
-    nn_train(nn, g, ti, to, RATE, EPOCHS);
+    nn_fill(v, 0);
+
+    nn_train(nn, g, v, ti, to, EPOCHS, RATE);
     nn_test(nn, tti, tto);
-    nn_free(nn);
+    nn_free(nn); nn_free(g); nn_free(v);
 }
 
 int main() {
-#if 0
-    xor_nn();
-#else
+    // xor_nn();
     mnist_nn();
-#endif
     return 0;
 }
