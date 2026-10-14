@@ -79,9 +79,10 @@ MAT_HOST_DEVICE void mat_copy(Mat dst, Mat m);
 
 __global__ void mat_sgd_helper_kernel(Mat dst, Mat m, float s);
 MAT_HOST_DEVICE void mat_sgd_helper(Mat dst, Mat m, float s);
-
-__global__ void mat_momentum_helper_kernel(Mat dst, Mat m, Mat v, Mat rate);
-MAT_HOST_DEVICE void mat_momentum_helper(Mat dst, Mat m, Mat v, Mat rate);
+__global__ void mat_momentum_helper_kernel(Mat dst, Mat m, Mat v, float rate);
+MAT_HOST_DEVICE void mat_momentum_helper(Mat dst, Mat m, Mat v, float rate);
+__global__ void mat_adam_helper_kernel(Mat dst, Mat m, Mat m1, Mat m2, float t, float rate);
+MAT_HOST_DEVICE void mat_adam_helper(Mat dst, Mat m, Mat m1, Mat m2, float t, float rate);
 
 __global__ void mat_sum_bias_kernel(Mat dst, Mat m);
 MAT_HOST_DEVICE void mat_sum_bias(Mat dst, Mat m);
@@ -389,6 +390,36 @@ MAT_HOST_DEVICE void mat_momentum_helper(Mat dst, Mat m, Mat v, float rate) {
     dim3 blocks((unsigned int) ((dst.cols + threads.x - 1) / threads.x),
                 (unsigned int) ((dst.rows + threads.y - 1) / threads.y));
     mat_momentum_helper_kernel<<<blocks, threads>>>(dst, m, v, rate);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+__global__ void mat_adam_helper_kernel(Mat dst, Mat m, Mat m1, Mat m2, float t, float rate) {
+    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
+    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i < dst.rows && j < dst.cols) {
+        float g = MAT_AT(m, i, j);
+        float a = 0.9f * MAT_AT(m1, i, j) + 0.1f * g;
+        float b = 0.999f * MAT_AT(m2, i, j) + 0.001f * g * g;
+        MAT_AT(m1, i, j) = a;
+        MAT_AT(m2, i, j) = b;
+
+        float c1 = 1.f - powf(0.9f, t);
+        float c2 = 1.f - powf(0.999f, t);
+        MAT_AT(dst, i, j) -= rate * (a / c1) / (sqrtf(b / c2) + 1e-8f);
+    }
+}
+
+MAT_HOST_DEVICE void mat_adam_helper(Mat dst, Mat m, Mat m1, Mat m2, float t, float rate) {
+    GNN_ASSERT(t > 0);
+    GNN_ASSERT(dst.rows == m.rows && dst.cols == m.cols);
+    GNN_ASSERT(dst.rows == m1.rows && dst.cols == m1.cols);
+    GNN_ASSERT(dst.rows == m2.rows && dst.cols == m2.cols);
+
+    dim3 threads(32, 8);
+    dim3 blocks((unsigned int) ((dst.cols + threads.x - 1) / threads.x),
+                (unsigned int) ((dst.rows + threads.y - 1) / threads.y));
+    mat_adam_helper_kernel<<<blocks, threads>>>(dst, m, m1, m2, t, s);
     CUDA_CHECK(cudaGetLastError());
 }
 
