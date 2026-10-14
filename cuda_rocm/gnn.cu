@@ -56,6 +56,7 @@ void mnist_nn() {
 
     size_t batch = 100;
     size_t dim[] = {784, 128, 64, 10};
+    // TODO: refactor nn_train to make calling it easier
     NN nn = nn_alloc(dim, ARRAY_LEN(dim), batch);
     NN g = nn_alloc(dim, ARRAY_LEN(dim), batch);
     NN v = nn_alloc(dim, ARRAY_LEN(dim), batch);
