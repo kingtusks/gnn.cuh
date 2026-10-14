@@ -50,8 +50,8 @@ __global__ void nn_activation_grad_kernel(Mat da, Mat a);
 void nn_backprop(NN nn, NN g, Mat ti, Mat to);
 void nn_sgd(NN nn, NN g, float rate);
 void nn_momentum(NN nn, NN g, NN v, float rate);
-// void nn_train(NN nn, NN g, NN v, Mat ti, Mat to, size_t epochs, float rate, Optimizer opt);
-void nn_train(NN nn, NN g, NN v, Mat ti, Mat to, size_t epochs, float rate = 1e-3, Optimizer opt = Optimizer::SGD);
+void nn_adam(NN nn, NN g, NN m1, NN m2, size_t t, float rate);
+void nn_train(NN nn, NN g, NN m1, NN m2, NN v, Mat ti, Mat to, size_t epochs, float rate = 1e-3, Optimizer opt = Optimizer::SGD);
 __global__ void nn_test_kernel(Mat out, Mat y, float* dcost);
 float nn_test(NN nn, Mat ti, Mat to);
 void nn_free(NN nn);
@@ -312,7 +312,15 @@ void nn_momentum(NN nn, NN g, NN v, float rate) {
     }
 }
 
-void nn_train(NN nn, NN g, NN v, Mat ti, Mat to, size_t epochs, float rate, Optimizer opt) {
+void nn_adam(NN nn, NN g, NN m1, NN m2, size_t t, float rate) {
+    for (size_t i = 0; i < nn.count; ++i) {
+        mat_adam_helper(nn.w[i], g.w[i], m1.w[i], m2.w[i], t, rate);
+        mat_adam_helper(nn.b[i], g.b[i], m1.b[i], m2.b[i], t, rate);
+    }
+}
+
+void nn_train(NN nn, NN g, NN m1, NN m2, NN v, Mat ti, Mat to, size_t epochs, float rate, Optimizer opt) {
+    size_t t = 0;
     for (size_t i = 1; i <= epochs; ++i) {
         for (size_t j = 0; j + nn.batch <= ti.rows; j += nn.batch) {
             nn_backprop(nn, g, mat_rows(ti, j, nn.batch), mat_rows(to, j, nn.batch));
@@ -324,7 +332,7 @@ void nn_train(NN nn, NN g, NN v, Mat ti, Mat to, size_t epochs, float rate, Opti
                     nn_momentum(nn, g, v, rate);
                     break;
                 case Optimizer::Adam:
-                    // TODO: MAKE ADAM OPTIMIZER
+                    nn_adam(nn, g, m1, m2, ++t, rate);
                     break;
             }
         }

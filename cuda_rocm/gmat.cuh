@@ -81,8 +81,8 @@ __global__ void mat_sgd_helper_kernel(Mat dst, Mat m, float s);
 MAT_HOST_DEVICE void mat_sgd_helper(Mat dst, Mat m, float s);
 __global__ void mat_momentum_helper_kernel(Mat dst, Mat m, Mat v, float rate);
 MAT_HOST_DEVICE void mat_momentum_helper(Mat dst, Mat m, Mat v, float rate);
-__global__ void mat_adam_helper_kernel(Mat dst, Mat m, Mat m1, Mat m2, float t, float rate);
-MAT_HOST_DEVICE void mat_adam_helper(Mat dst, Mat m, Mat m1, Mat m2, float t, float rate);
+__global__ void mat_adam_helper_kernel(Mat dst, Mat m, Mat m1, Mat m2, size_t t, float rate);
+MAT_HOST_DEVICE void mat_adam_helper(Mat dst, Mat m, Mat m1, Mat m2, size_t t, float rate);
 
 __global__ void mat_sum_bias_kernel(Mat dst, Mat m);
 MAT_HOST_DEVICE void mat_sum_bias(Mat dst, Mat m);
@@ -393,7 +393,7 @@ MAT_HOST_DEVICE void mat_momentum_helper(Mat dst, Mat m, Mat v, float rate) {
     CUDA_CHECK(cudaGetLastError());
 }
 
-__global__ void mat_adam_helper_kernel(Mat dst, Mat m, Mat m1, Mat m2, float t, float rate) {
+__global__ void mat_adam_helper_kernel(Mat dst, Mat m, Mat m1, Mat m2, size_t t, float rate) {
     size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
     size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -410,7 +410,7 @@ __global__ void mat_adam_helper_kernel(Mat dst, Mat m, Mat m1, Mat m2, float t, 
     }
 }
 
-MAT_HOST_DEVICE void mat_adam_helper(Mat dst, Mat m, Mat m1, Mat m2, float t, float rate) {
+MAT_HOST_DEVICE void mat_adam_helper(Mat dst, Mat m, Mat m1, Mat m2, size_t t, float rate) {
     GNN_ASSERT(t > 0);
     GNN_ASSERT(dst.rows == m.rows && dst.cols == m.cols);
     GNN_ASSERT(dst.rows == m1.rows && dst.cols == m1.cols);
@@ -419,7 +419,7 @@ MAT_HOST_DEVICE void mat_adam_helper(Mat dst, Mat m, Mat m1, Mat m2, float t, fl
     dim3 threads(32, 8);
     dim3 blocks((unsigned int) ((dst.cols + threads.x - 1) / threads.x),
                 (unsigned int) ((dst.rows + threads.y - 1) / threads.y));
-    mat_adam_helper_kernel<<<blocks, threads>>>(dst, m, m1, m2, t, s);
+    mat_adam_helper_kernel<<<blocks, threads>>>(dst, m, m1, m2, t, rate);
     CUDA_CHECK(cudaGetLastError());
 }
 
