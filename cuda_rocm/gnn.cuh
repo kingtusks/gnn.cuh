@@ -38,6 +38,7 @@ enum class Optimizer {
 #define NN_PRINT(nn) nn_print(nn, #nn)
 
 NN nn_alloc(size_t* dim, size_t dim_len, size_t batch);
+NN nn_alloc_copy(NN nn);
 void nn_rand(NN nn, float low, float high);
 void nn_rand_he(NN nn);
 void nn_fill(NN nn, float n);
@@ -51,7 +52,7 @@ void nn_backprop(NN nn, NN g, Mat ti, Mat to);
 void nn_sgd(NN nn, NN g, float rate);
 void nn_momentum(NN nn, NN g, NN v, float rate);
 void nn_adam(NN nn, NN g, NN m1, NN m2, size_t t, float rate);
-void nn_train(NN nn, NN g, NN m1, NN m2, NN v, Mat ti, Mat to, size_t epochs, float rate = 1e-3, Optimizer opt = Optimizer::SGD);
+void nn_train(NN nn, Mat ti, Mat to, size_t epochs = 1000, float rate = 1e-3, Optimizer opt = Optimizer::Adam);
 __global__ void nn_test_kernel(Mat out, Mat y, float* dcost);
 float nn_test(NN nn, Mat ti, Mat to);
 void nn_free(NN nn);
@@ -96,8 +97,7 @@ static void nn_mat_write(FILE* f, Mat m) {
     float* h = (float*) malloc(n * sizeof(float));
     GNN_ASSERT(h);
     CUDA_CHECK(cudaMemcpy(h, m.es, n * sizeof(float), cudaMemcpyDeviceToHost));
-    size_t ok = fwrite(h, sizeof(float), n, f);
-    GNN_ASSERT(ok == n);
+    size_t ok = fwrite(h, sizeof(float), n, f); GNN_ASSERT(ok == n);
     (void) ok;
     free(h);
 }
@@ -136,6 +136,20 @@ NN nn_alloc(size_t* dim, size_t dim_len, size_t batch) {
 
     CUDA_CHECK(cudaMalloc((void**)&nn.dc, sizeof(float)));
     return nn;
+}
+
+NN nn_alloc_copy(NN nn) {
+    size_t n = nn.count + 1;
+    size_t* dim = (size_t*) malloc(sizeof(size_t) * n);
+    GNN_ASSERT(dim);
+
+    dim[0] = NN_INPUT(nn).cols;
+    for (size_t i = 0; i < nn.count; ++i)
+        dim[i + 1] = nn.w[i].cols;
+
+    NN a = nn_alloc(dim, n, nn.batch);
+    free(dim);
+    return a;
 }
 
 void nn_rand(NN nn, float low, float high) {
@@ -319,8 +333,27 @@ void nn_adam(NN nn, NN g, NN m1, NN m2, size_t t, float rate) {
     }
 }
 
-void nn_train(NN nn, NN g, NN m1, NN m2, NN v, Mat ti, Mat to, size_t epochs, float rate, Optimizer opt) {
+void nn_train(NN nn, Mat ti, Mat to, size_t epochs, float rate, Optimizer opt) {
+    nn_rand_he(nn);
+    NN g = nn_alloc_copy(nn);
+    NN v = {}, m1 = {}, m2 = {};
     size_t t = 0;
+
+    switch (opt) {
+        case Optimizer::SGD:
+            break;
+        case Optimizer::SGDMomentum:
+            v = nn_alloc_copy(nn);
+            nn_fill(v, 0);
+            break;
+        case Optimizer::Adam:
+            m1 = nn_alloc_copy(nn);
+            m2 = nn_alloc_copy(nn);
+            nn_fill(m1, 0);
+            nn_fill(m2, 0);
+            break;
+    }
+
     for (size_t i = 1; i <= epochs; ++i) {
         for (size_t j = 0; j + nn.batch <= ti.rows; j += nn.batch) {
             nn_backprop(nn, g, mat_rows(ti, j, nn.batch), mat_rows(to, j, nn.batch));
@@ -338,6 +371,18 @@ void nn_train(NN nn, NN g, NN m1, NN m2, NN v, Mat ti, Mat to, size_t epochs, fl
         }
         if (i % NN_PRINT_INTERVAL == 0)
             printf("%zu: cost: %f\n", i, nn_cost(nn, ti, to));
+    }
+
+    nn_free(g);
+    switch (opt) {
+        case Optimizer::SGD:
+            break;
+        case Optimizer::SGDMomentum:
+            nn_free(v);
+            break;
+        case Optimizer::Adam:
+            nn_free(m1); nn_free(m2);
+            break;
     }
 }
 

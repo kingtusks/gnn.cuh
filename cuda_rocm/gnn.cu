@@ -56,22 +56,12 @@ void mnist_nn() {
 
     size_t batch = 100;
     size_t dim[] = {784, 128, 64, 10};
-    // TODO: refactor nn_train to make calling it easier
+
     NN nn = nn_alloc(dim, ARRAY_LEN(dim), batch);
-    NN g = nn_alloc(dim, ARRAY_LEN(dim), batch);
-    NN v = nn_alloc(dim, ARRAY_LEN(dim), batch);
-    NN m1 = nn_alloc(dim, ARRAY_LEN(dim), batch);
-    NN m2 = nn_alloc(dim, ARRAY_LEN(dim), batch);
 
-    nn_rand_he(nn);
-    nn_fill(v, 0);
-    nn_fill(m1, 0);
-    nn_fill(m2, 0);
-
-    nn_train(nn, g, m1, m2, v, ti, to, EPOCHS, RATE, Optimizer::Adam);
+    nn_train(nn, ti, to, EPOCHS, RATE, Optimizer::SGD);
     nn_test(nn, tti, tto);
-    nn_free(nn); nn_free(g);
-    nn_free(v); nn_free(m1); nn_free(m2);
+    nn_free(nn);
 }
 
 int main() {
