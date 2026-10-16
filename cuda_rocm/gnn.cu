@@ -4,9 +4,6 @@
 #define MNIST_IMPLEMENTATION
 #include "../mnist/mnist.h"
 
-#define RATE 1e-6
-#define EPOCHS 100
-
 float xor_td[] = {
     0, 0, 0,
     0, 1, 1,
@@ -59,7 +56,7 @@ void mnist_nn() {
 
     NN nn = nn_alloc(dim, ARRAY_LEN(dim), batch);
 
-    nn_train(nn, ti, to, EPOCHS, RATE, Optimizer::SGD);
+    nn_train(nn, ti, to, 100, 1e-1, Optimizer::SGD);
     nn_test(nn, tti, tto);
     nn_free(nn);
 }
