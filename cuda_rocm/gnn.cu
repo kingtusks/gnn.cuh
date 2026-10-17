@@ -1,4 +1,3 @@
-// #define GNN_SIGMOID
 #define GNN_IMPLEMENTATION
 #include "gnn.cuh"
 #define MNIST_IMPLEMENTATION
