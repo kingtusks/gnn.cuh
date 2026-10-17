@@ -1,4 +1,3 @@
-- clean up the `nn_train` function
 - make an `nn_infer` function for single use stuff
 - clean up the rest of the code in general for readability
 - start CNNs

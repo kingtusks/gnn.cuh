@@ -52,12 +52,15 @@ void mnist_nn() {
     Mat tto = mat_alloc_from(10000, MNIST_N_CLASSES, MNIST_STRIDE, mnist_ttd.data() + MNIST_IMG_SIZE);
 
     size_t batch = 100;
+    size_t epochs = 100;
+    float rate = 1e-1;
     size_t dim[] = {784, 128, 64, 10};
 
     NN nn = nn_alloc(dim, ARRAY_LEN(dim), batch);
 
-    nn_train(nn, ti, to, 100, 1e-1, Optimizer::SGD);
+    nn_train(nn, ti, to, epochs, rate, Optimizer::SGD);
     nn_test(nn, tti, tto);
+    nn_infer(nn, mat_rows(tti, 8, 1));
     nn_free(nn);
 }
 

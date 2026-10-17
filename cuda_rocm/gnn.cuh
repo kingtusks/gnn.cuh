@@ -55,6 +55,7 @@ void nn_adam(NN nn, NN g, NN m1, NN m2, size_t t, float rate);
 void nn_train(NN nn, Mat ti, Mat to, size_t epochs = 1000, float rate = 1e-3, Optimizer opt = Optimizer::Adam);
 __global__ void nn_test_kernel(Mat out, Mat y, float* dcost);
 float nn_test(NN nn, Mat ti, Mat to);
+void nn_infer(NN nn, Mat ti);
 void nn_free(NN nn);
 void nn_save(NN nn, const char* path);
 void nn_load(NN nn, const char* path);
@@ -424,6 +425,14 @@ float nn_test(NN nn, Mat ti, Mat to) {
     float acc = 100.f * correct / (float) total;
     printf("accuracy: %.2f%% (%d / %zu)\n", acc, (int) correct, total);
     return acc;
+}
+
+void nn_infer(NN nn, Mat ti) {
+    for (size_t i = 0; i < ti.rows; ++i) {
+        mat_copy(NN_INPUT(nn), mat_rows(ti, i, 1));
+        nn_forward(nn);
+        mat_print(mat_row(NN_OUTPUT(nn), i), "output");
+    }
 }
 
 void nn_free(NN nn) {
