@@ -62,6 +62,10 @@ __global__ void mat_fill_noncontiguous_kernel(Mat m, float n);
 void mat_fill_noncontiguous(Mat m, float n);
 void mat_fill(Mat m, float n);
 
+__global__ void mat_pad_fill(Mat dst, Mat m, float p_num, size_t p_size);
+__global__ void mat_pad_inject(Mat dst, Mat m, size_t p_size);
+void mat_pad(Mat dst, Mat m, float p_num, size_t p_size);
+
 void mat_set_seed(uint64_t seed);
 __global__ void mat_rand_contiguous_kernel(float* p, float low, float high, size_t area, uint64_t seed);
 void mat_rand_contiguous(Mat m, float low, float high, uint64_t seed);
@@ -257,6 +261,36 @@ void mat_fill_noncontiguous(Mat m, float n) {
 
 void mat_fill(Mat m, float n) {
     (m.stride == m.cols) ? mat_fill_contiguous(m, n) : mat_fill_noncontiguous(m, n);
+}
+
+__global__ void mat_pad_fill(Mat dst, float p_num, size_t p_size) {
+    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
+    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i < dst.rows && j < dst.cols)
+        if (i < p_size || j < p_size || (i >= dst.rows - p_size && i < dst.rows) || (j >= dst.cols - p_size && j < dst.cols))
+            MAT_AT(dst, i, j) = p_num;
+}
+
+__global__ void mat_pad_inject(Mat dst, Mat m, size_t p_size) {
+    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
+    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i < m.rows && j < m.cols) MAT_AT(dst, i + p_size, j + p_size) = MAT_AT(m, i, j);
+}
+
+void mat_pad(Mat dst, Mat m, float p_num, size_t p_size) {
+    GNN_ASSERT(dst.rows == m.rows + 2 * p_size);
+    GNN_ASSERT(dst.cols == m.cols + 2 * p_size);
+
+    dim3 threads(32, 8);
+    dim3 i_blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
+    mat_pad_inject<<<i_blocks, threads>>>(dst, m, p_size);
+    CUDA_CHECK(cudaGetLastError());
+
+    dim3 f_blocks((dst.cols + threads.x - 1) / threads.x, (dst.rows + threads.y - 1) / threads.y);
+    mat_pad_fill<<<f_blocks, threads>>>(dst, p_num, p_size);
+    CUDA_CHECK(cudaGetLastError());
 }
 
 static uint64_t mat_rand_seed = MAT_RAND_SEED;
