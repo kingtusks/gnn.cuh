@@ -177,7 +177,8 @@ void nn_fill(NN nn, float n) {
     mat_fill(NN_OUTPUT(nn), n);
 }
 
-void nn_forward(NN nn) { for (size_t i = 0; i < nn.count; ++i) {
+void nn_forward(NN nn) {
+    for (size_t i = 0; i < nn.count; ++i) {
         mat_dot(nn.a[i + 1], nn.a[i], nn.w[i]);
         mat_sum_bias(nn.a[i + 1], nn.b[i]);
         if (i + 1 < nn.count) mat_leaky_relu(nn.a[i + 1]);

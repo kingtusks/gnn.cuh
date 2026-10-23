@@ -72,7 +72,8 @@ int main() {
     Mat dst = mat_alloc_pad(m, 2);
 
     mat_pad(dst, m, 7, 2);
-
+    float a = mat_max(dst);
+    printf("%f", a);
     MAT_PRINT(dst);
     return 0;
 }
