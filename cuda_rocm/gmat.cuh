@@ -55,6 +55,7 @@ MAT_HOST_DEVICE void cuda_check(cudaError_t err, const char* file, int line);
 Mat mat_alloc(size_t rows, size_t cols);
 Mat mat_alloc_from(size_t rows, size_t cols, size_t stride, const float* h_es);
 Mat mat_alloc_feature_map(size_t m_sz, size_t k_sz, size_t p, size_t c_stride);
+Mat mat_alloc_pad(Mat m, size_t p_size);
 
 __global__ void mat_fill_contiguous_kernel(float* p, float n, size_t area);
 void mat_fill_contiguous(Mat m, float n);
@@ -225,6 +226,10 @@ Mat mat_alloc_feature_map(size_t m_sz, size_t k_sz, size_t p, size_t c_stride) {
     GNN_ASSERT(num % c_stride == 0);
     size_t dim = 1 + num / c_stride;
     return mat_alloc(dim, dim);
+}
+
+Mat mat_alloc_pad(Mat m, size_t p_size) {
+    return mat_alloc(m.rows + 2 * p_size, m.cols + 2 * p_size);
 }
 
 __global__ void mat_fill_contiguous_kernel(float* p, float n, size_t area) {

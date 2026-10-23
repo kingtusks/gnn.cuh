@@ -66,11 +66,11 @@ void mnist_nn() {
 int main() {
     // xor_nn();
     // mnist_nn();
-    
+
     Mat m = mat_alloc(2, 3);
     mat_fill(m, 1);
+    Mat dst = mat_alloc_pad(m, 2);
 
-    Mat dst = mat_alloc(6, 7);
     mat_pad(dst, m, 7, 2);
 
     MAT_PRINT(dst);
