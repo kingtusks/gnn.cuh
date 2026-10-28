@@ -485,7 +485,7 @@ __global__ void mat_pool_max_kernel(Mat dst, Mat m, size_t fx, size_t fy, size_t
                 best = fmaxf(best, MAT_AT(m, r0 + y, c0 + x));
 
         MAT_AT(dst, i, j) = best;
-    } 
+    }
 }
 
 MAT_HOST_DEVICE void mat_pool_max(Mat dst, Mat m, const size_t* sf) {
@@ -500,6 +500,38 @@ MAT_HOST_DEVICE void mat_pool_max(Mat dst, Mat m, const size_t* sf) {
     dim3 blocks{(unsigned int) ((dst.cols + threads.x - 1) / threads.x),
                 (unsigned int) ((dst.rows + threads.y - 1) / threads.y)};
     mat_pool_max_kernel<<<blocks, threads>>>(dst, m, fx, fy, sx, sy);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+__global__ void mat_pool_average_kernel(Mat dst, Mat m, size_t fx, size_t fy, size_t sx, size_t sy) {
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+
+    if (i < dst.rows && j < dst.cols) {
+        size_t r0{i * sy};
+        size_t c0{j * sx};
+
+        float avg{};
+        for (size_t y{}; y < fy; ++y)
+            for (size_t x{}; x < fx; ++x)
+                avg += MAT_AT(m, r0 + y, c0 + x);
+
+        MAT_AT(dst, i, j) = avg / (fx * fy);
+    }
+}
+
+MAT_HOST_DEVICE void mat_pool_average(Mat dst, Mat m, const size_t* p) {
+    size_t sx{sf[0]}, sy{sf[1]}, fx{sf[2]}, fy{sf[3]};
+
+    GNN_ASSERT(sx > 0 && sy > 0 && fx > 0 && fy > 0);
+    GNN_ASSERT(m.rows >= fy && m.cols >= fx);
+    GNN_ASSERT(dst.rows == (m.rows - fy) / sy + 1);
+    GNN_ASSERT(dst.cols == (m.cols - fx) / sx + 1);
+
+    dim3 threads{32, 8};
+    dim3 blocks{(unsigned int) ((dst.cols + threads.x - 1) / threads.x),
+                (unsigned int) ((dst.rows + threads.y - 1) / threads.y)};
+    mat_pool_average_kernel<<<blocks, threads>>>(dst, m, fx, fy, sx, sy);
     CUDA_CHECK(cudaGetLastError());
 }
 
