@@ -12,6 +12,8 @@ Reaches **[98.13]%** on MNIST (test set).
 
 Originally supposed to be a CUDA port of [tsoding/nn.h](https://github.com/tsoding/nn.h), following his [Machine Learning in C series](https://www.youtube.com/watch?v=PGSba51aRYU&list=PLpM-Dvs8t0VZPZKggcql-MmjaBdZKeDMw) but later added new things other than FNNs.
 
+`CIFER_10` and `CIFER_100` datasets are from this paper: [Learning Multiple Layers of Features from Tiny Images](https://cave.cs.toronto.edu/kriz/learning-features-2009-TR.pdf).
+
 ## Build
 
 ### NVIDIA (CUDA)
