@@ -64,16 +64,6 @@ void mnist_nn() {
 }
 
 int main() {
-    // xor_nn();
-    // mnist_nn();
-
-    Mat m = mat_alloc(2, 3);
-    mat_fill(m, 1);
-    Mat dst = mat_alloc_pad(m, 2);
-
-    mat_pad(dst, m, 7, 2);
-    float a = mat_max(dst);
-    printf("%f", a);
-    MAT_PRINT(dst);
+    mnist_nn();
     return 0;
 }

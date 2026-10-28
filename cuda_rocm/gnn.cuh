@@ -1,4 +1,5 @@
-#pragma once
+#ifndef GNN_CUH
+#define GNN_CUH
 
 #ifdef GNN_IMPLEMENTATION
 #define GMAT_IMPLEMENTATION
@@ -20,11 +21,11 @@
 #define NN_PRINT_INTERVAL 5
 #endif //NN_PRINT_INTERVAL
 
-typedef struct {
+struct NN {
     size_t count, batch;
     Mat *w, *b, *a;
     float *dc;
-} NN;
+};
 
 enum class Optimizer {
     SGD,
@@ -62,9 +63,9 @@ void nn_load(NN nn, const char* path);
 void nn_print(NN nn, const char* name);
 
 static void nn_finite_diff_nudge(NN nn, Mat m, Mat gm, Mat ti, Mat to, float eps, float c) {
-    for (size_t j = 0; j < m.rows; ++j) {
-        for (size_t k = 0; k < m.cols; ++k) {
-            float* p = &MAT_AT(m, j, k);
+    for (size_t j{0}; j < m.rows; ++j) {
+        for (size_t k{0}; k < m.cols; ++k) {
+            float* p{&MAT_AT(m, j, k)};
             float saved, nudged, grad;
 
             CUDA_CHECK(cudaMemcpy(&saved, p, sizeof(float), cudaMemcpyDeviceToHost));
@@ -80,48 +81,50 @@ static void nn_finite_diff_nudge(NN nn, Mat m, Mat gm, Mat ti, Mat to, float eps
 }
 
 static void nn_write_u64(FILE* f, uint64_t n) {
-    size_t ok = fwrite(&n, sizeof(n), 1, f);
+    size_t ok{fwrite(&n, sizeof(n), 1, f)};
     GNN_ASSERT(ok == 1);
     (void) ok;
 }
 
 static uint64_t nn_read_u64(FILE* f) {
-    uint64_t v = 0;
-    size_t ok = fread(&v, sizeof(v), 1, f);
+    uint64_t v{};
+    size_t ok{fread(&v, sizeof(v), 1, f)};
     GNN_ASSERT(ok == 1);
     (void) ok;
     return v;
 }
 
 static void nn_mat_write(FILE* f, Mat m) {
-    size_t n = m.rows * m.cols;
-    float* h = (float*) malloc(n * sizeof(float));
+    size_t n{m.rows * m.cols};
+    float* h{(float*) malloc(n * sizeof(float))};
     GNN_ASSERT(h);
     CUDA_CHECK(cudaMemcpy(h, m.es, n * sizeof(float), cudaMemcpyDeviceToHost));
-    size_t ok = fwrite(h, sizeof(float), n, f); GNN_ASSERT(ok == n);
+    size_t ok{fwrite(h, sizeof(float), n, f)};
+    GNN_ASSERT(ok == n);
     (void) ok;
     free(h);
 }
 
 static void nn_mat_read(FILE* f, Mat m) {
-    size_t n = m.rows * m.cols;
-    float* h = (float*) malloc(n * sizeof(float));
+    size_t n{m.rows * m.cols};
+    float* h{(float*) malloc(n * sizeof(float))};
     GNN_ASSERT(h);
-    size_t ok = fread(h, sizeof(float), n, f);
+    size_t ok{fread(h, sizeof(float), n, f)};
     GNN_ASSERT(ok == n);
     (void) ok;
     CUDA_CHECK(cudaMemcpy(m.es, h, n * sizeof(float), cudaMemcpyHostToDevice));
     free(h);
 }
 
+#endif //GNN_CUH
 #ifdef GNN_IMPLEMENTATION
 
 NN nn_alloc(size_t* dim, size_t dim_len, size_t batch) {
     NN nn;
     nn.count = dim_len - 1;
     nn.batch = batch;
-    size_t sizeof_wb = sizeof(Mat) * nn.count;
-    size_t sizeof_a = sizeof(Mat) * (nn.count + 1);
+    size_t sizeof_wb{sizeof(Mat) * nn.count};
+    size_t sizeof_a{sizeof(Mat) * (nn.count + 1)};
 
     nn.w = (Mat*) malloc(sizeof_wb);
     nn.b = (Mat*) malloc(sizeof_wb);
@@ -129,7 +132,7 @@ NN nn_alloc(size_t* dim, size_t dim_len, size_t batch) {
     GNN_ASSERT(nn.w && nn.b && nn.a);
 
     NN_INPUT(nn) = mat_alloc(batch, dim[0]);
-    for (size_t i = 1; i < dim_len; ++i) {
+    for (size_t i{1}; i < dim_len; ++i) {
         nn.w[i - 1] = mat_alloc(dim[i - 1], dim[i]);
         nn.b[i - 1] = mat_alloc(1, dim[i]);
         nn.a[i] = mat_alloc(batch, dim[i]);
@@ -140,36 +143,37 @@ NN nn_alloc(size_t* dim, size_t dim_len, size_t batch) {
 }
 
 NN nn_alloc_copy(NN nn) {
-    size_t n = nn.count + 1;
-    size_t* dim = (size_t*) malloc(sizeof(size_t) * n);
+    size_t n{nn.count + 1};
+    size_t* dim{(size_t*) malloc(sizeof(size_t) * n)};
     GNN_ASSERT(dim);
 
     dim[0] = NN_INPUT(nn).cols;
-    for (size_t i = 0; i < nn.count; ++i)
+    for (size_t i{}; i < nn.count; ++i)
         dim[i + 1] = nn.w[i].cols;
 
-    NN a = nn_alloc(dim, n, nn.batch);
+    NN a{nn_alloc(dim, n, nn.batch)};
     free(dim);
     return a;
 }
 
 void nn_rand(NN nn, float low, float high) {
-    for (size_t i = 0; i < nn.count; ++i) {
+    for (size_t i{}; i < nn.count; ++i) {
         mat_rand(nn.w[i], low, high);
         mat_rand(nn.b[i], low, high);
     }
 }
 
 void nn_rand_he(NN nn) {
-    for (size_t i = 0; i < nn.count; ++i) {
-        float lim = sqrtf(6.f / (float) nn.w[i].rows);
+    float lim;
+    for (size_t i{}; i < nn.count; ++i) {
+        lim = sqrtf(6.f / (float) nn.w[i].rows);
         mat_rand(nn.w[i], -lim, lim);
         mat_fill(nn.b[i], 0.f);
     }
 }
 
 void nn_fill(NN nn, float n) {
-    for (size_t i = 0; i < nn.count; ++i) {
+    for (size_t i{}; i < nn.count; ++i) {
         mat_fill(nn.w[i], n);
         mat_fill(nn.b[i], n);
         mat_fill(nn.a[i], n);
@@ -178,7 +182,7 @@ void nn_fill(NN nn, float n) {
 }
 
 void nn_forward(NN nn) {
-    for (size_t i = 0; i < nn.count; ++i) {
+    for (size_t i{}; i < nn.count; ++i) {
         mat_dot(nn.a[i + 1], nn.a[i], nn.w[i]);
         mat_sum_bias(nn.a[i + 1], nn.b[i]);
         if (i + 1 < nn.count) mat_leaky_relu(nn.a[i + 1]);
@@ -188,21 +192,21 @@ void nn_forward(NN nn) {
 
 __global__ void nn_cost_kernel(Mat out, Mat y, float* dcost) {
     extern __shared__ float sd[];
-    size_t tx = threadIdx.x;
-    size_t idx = (size_t) blockIdx.x * blockDim.x + tx;
-    size_t area = out.rows * out.cols;
+    size_t tx{threadIdx.x};
+    size_t idx{(size_t) blockIdx.x * blockDim.x + tx};
+    size_t area{out.rows * out.cols};
 
-    float v = 0;
+    float v{};
     if (idx < area) {
-        size_t i = idx / out.cols;
-        size_t j = idx % out.cols;
+        size_t i{idx / out.cols};
+        size_t j{idx % out.cols};
         v += -MAT_AT(y, i, j) * logf(MAT_AT(out, i, j) + 1e-7f);
     }
 
     sd[tx] = v;
     __syncthreads();
 
-    for (size_t s = blockDim.x / 2; s > 0; s >>= 1) {
+    for (size_t s{blockDim.x / 2}; s > 0; s >>= 1) {
         if (s > tx) sd[tx] += sd[tx + s];
         __syncthreads();
     }
@@ -215,14 +219,14 @@ float nn_cost(NN nn, Mat ti, Mat to) {
     GNN_ASSERT(ti.rows == to.rows);
     GNN_ASSERT(to.cols == NN_OUTPUT(nn).cols);
 
-    unsigned int threads = 256;
-    size_t area = (size_t) NN_OUTPUT(nn).rows * NN_OUTPUT(nn).cols;
-    unsigned int blocks = (unsigned int) ((area + threads - 1) / threads);
+    unsigned int threads{256};
+    size_t area{(size_t) NN_OUTPUT(nn).rows * NN_OUTPUT(nn).cols};
+    unsigned int blocks{(unsigned int) ((area + threads - 1) / threads)};
 
     CUDA_CHECK(cudaMemset(nn.dc, 0, sizeof(float)));
 
-    size_t nb = 0;
-    for (size_t i = 0; i + nn.batch <= ti.rows; i += nn.batch, ++nb) {
+    size_t nb{};
+    for (size_t i{}; i + nn.batch <= ti.rows; i += nn.batch, ++nb) {
         mat_copy(NN_INPUT(nn), mat_rows(ti, i, nn.batch));
         nn_forward(nn);
         nn_cost_kernel<<<blocks, threads, threads * sizeof(float)>>>(NN_OUTPUT(nn), mat_rows(to, i, nn.batch), nn.dc);
@@ -236,23 +240,23 @@ float nn_cost(NN nn, Mat ti, Mat to) {
 }
 
 void nn_finite_diff(NN nn, NN g, Mat ti, Mat to, float eps) {
-    float c = nn_cost(nn, ti, to);
-    for (size_t i = 0; i < nn.count; ++i) {
+    float c{nn_cost(nn, ti, to)};
+    for (size_t i{}; i < nn.count; ++i) {
         nn_finite_diff_nudge(nn, nn.w[i], g.w[i], ti, to, eps, c);
         nn_finite_diff_nudge(nn, nn.b[i], g.b[i], ti, to, eps, c);
     }
 }
 
 __global__ void nn_out_grad_kernel(Mat a, Mat y, Mat da, float scale) {
-    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
     if (i < a.rows && j < a.cols)
         MAT_AT(da, i, j) = scale * (MAT_AT(a, i, j) - MAT_AT(y, i, j));
 }
 
 __global__ void nn_activation_grad_kernel(Mat da, Mat a) {
-    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
     if (i < a.rows && j < a.cols && MAT_AT(a, i, j) <= 0.f) MAT_AT(da, i, j) *= 0.01f;
 }
 
@@ -263,18 +267,20 @@ void nn_backprop(NN nn, NN g, Mat ti, Mat to) {
     mat_copy(NN_INPUT(nn), ti);
     nn_forward(nn);
 
-    dim3 t(32, 8);
-    Mat out = NN_OUTPUT(nn);
-    dim3 blk((unsigned int) ((out.cols + t.x - 1) / t.x), (unsigned int) ((out.rows + t.y - 1) / t.y));
-    nn_out_grad_kernel<<<blk, t>>>(out, to, g.a[nn.count], 1.f / (float) nn.batch);
+    dim3 threads{32, 8};
+    Mat out{NN_OUTPUT(nn)};
+    dim3 blocks_out{(unsigned int) ((out.cols + threads.x - 1) / threads.x), (unsigned int) ((out.rows + threads.y - 1) / threads.y)};
+    nn_out_grad_kernel<<<blocks_out, threads>>>(out, to, g.a[nn.count], 1.f / (float) nn.batch);
     CUDA_CHECK(cudaGetLastError());
 
-    for (size_t l = nn.count; l > 0; --l) {
-        Mat a = nn.a[l];
-        Mat dz = g.a[l];
+    Mat a;
+    Mat dz;
+    for (size_t l{nn.count}; l > 0; --l) {
+        a = nn.a[l];
+        dz = g.a[l];
         if (l < nn.count) {
-            dim3 b2((unsigned int) ((a.cols + t.x - 1) / t.x), (unsigned int) ((a.rows + t.y - 1) / t.y));
-            nn_activation_grad_kernel<<<b2, t>>>(dz, a);
+            dim3 blocks_activation{(unsigned int) ((a.cols + threads.x - 1) / threads.x), (unsigned int) ((a.rows + threads.y - 1) / threads.y)};
+            nn_activation_grad_kernel<<<blocks_activation, threads>>>(dz, a);
             CUDA_CHECK(cudaGetLastError());
         }
         mat_dot_ta(g.w[l - 1], nn.a[l - 1], dz);
@@ -285,21 +291,21 @@ void nn_backprop(NN nn, NN g, Mat ti, Mat to) {
 }
 
 void nn_sgd(NN nn, NN g, float rate) {
-    for (size_t i = 0; i < nn.count; ++i) {
+    for (size_t i{}; i < nn.count; ++i) {
         mat_sgd_helper(nn.w[i], g.w[i], rate);
         mat_sgd_helper(nn.b[i], g.b[i], rate);
     }
 }
 
 void nn_momentum(NN nn, NN g, NN v, float rate) {
-    for (size_t i = 0; i < nn.count; ++i) {
+    for (size_t i{}; i < nn.count; ++i) {
         mat_momentum_helper(nn.w[i], g.w[i], v.w[i], rate);
         mat_momentum_helper(nn.b[i], g.b[i], v.b[i], rate);
     }
 }
 
 void nn_adam(NN nn, NN g, NN m1, NN m2, size_t t, float rate) {
-    for (size_t i = 0; i < nn.count; ++i) {
+    for (size_t i{}; i < nn.count; ++i) {
         mat_adam_helper(nn.w[i], g.w[i], m1.w[i], m2.w[i], t, rate);
         mat_adam_helper(nn.b[i], g.b[i], m1.b[i], m2.b[i], t, rate);
     }
@@ -307,9 +313,9 @@ void nn_adam(NN nn, NN g, NN m1, NN m2, size_t t, float rate) {
 
 void nn_train(NN nn, Mat ti, Mat to, size_t epochs, float rate, Optimizer opt) {
     nn_rand_he(nn);
-    NN g = nn_alloc_copy(nn);
-    NN v = {}, m1 = {}, m2 = {};
-    size_t t = 0;
+    NN g{nn_alloc_copy(nn)};
+    NN v{}, m1{}, m2{};
+    size_t t{};
 
     switch (opt) {
         case Optimizer::SGD:
@@ -326,8 +332,8 @@ void nn_train(NN nn, Mat ti, Mat to, size_t epochs, float rate, Optimizer opt) {
             break;
     }
 
-    for (size_t i = 1; i <= epochs; ++i) {
-        for (size_t j = 0; j + nn.batch <= ti.rows; j += nn.batch) {
+    for (size_t i{1}; i <= epochs; ++i) {
+        for (size_t j{}; j + nn.batch <= ti.rows; j += nn.batch) {
             nn_backprop(nn, g, mat_rows(ti, j, nn.batch), mat_rows(to, j, nn.batch));
             switch (opt) {
                 case Optimizer::SGD:
@@ -359,11 +365,11 @@ void nn_train(NN nn, Mat ti, Mat to, size_t epochs, float rate, Optimizer opt) {
 }
 
 __global__ void nn_test_kernel(Mat out, Mat y, float* dcost) {
-    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
     if (i >= out.rows) return;
 
-    size_t po = 0, py = 0;
-    for (size_t j = 1; j < out.cols; ++j) {
+    size_t po{}, py{};
+    for (size_t j{1}; j < out.cols; ++j) {
         if (MAT_AT(out, i, j) > MAT_AT(out, i, po)) po = j;
         if (MAT_AT(y, i, j) > MAT_AT(y, i, py)) py = j;
     }
@@ -375,13 +381,13 @@ float nn_test(NN nn, Mat ti, Mat to) {
     GNN_ASSERT(ti.rows == to.rows);
     GNN_ASSERT(to.cols == NN_OUTPUT(nn).cols);
 
-    unsigned int threads = 256;
-    unsigned int blocks = (unsigned int) ((nn.batch + threads - 1) / threads);
+    unsigned int threads{256};
+    unsigned int blocks{(unsigned int) ((nn.batch + threads - 1) / threads)};
 
     CUDA_CHECK(cudaMemset(nn.dc, 0, sizeof(float)));
 
-    size_t nb = 0;
-    for (size_t i = 0; i + nn.batch <= ti.rows; i += nn.batch, ++nb) {
+    size_t nb{};
+    for (size_t i{}; i + nn.batch <= ti.rows; i += nn.batch, ++nb) {
         mat_copy(NN_INPUT(nn), mat_rows(ti, i, nn.batch));
         nn_forward(nn);
         nn_test_kernel<<<blocks, threads>>>(NN_OUTPUT(nn), mat_rows(to, i, nn.batch), nn.dc);
@@ -392,14 +398,14 @@ float nn_test(NN nn, Mat ti, Mat to) {
     float correct;
     CUDA_CHECK(cudaMemcpy(&correct, nn.dc, sizeof(float), cudaMemcpyDeviceToHost));
 
-    size_t total = nb * nn.batch;
-    float acc = 100.f * correct / (float) total;
+    size_t total{nb * nn.batch};
+    float acc{100.f * correct / (float) total};
     printf("accuracy: %.2f%% (%d / %zu)\n", acc, (int) correct, total);
     return acc;
 }
 
 void nn_infer(NN nn, Mat ti) {
-    for (size_t i = 0; i < ti.rows; ++i) {
+    for (size_t i{}; i < ti.rows; ++i) {
         mat_copy(NN_INPUT(nn), mat_rows(ti, i, 1));
         nn_forward(nn);
         mat_print(mat_row(NN_OUTPUT(nn), i), "output");
@@ -407,7 +413,7 @@ void nn_infer(NN nn, Mat ti) {
 }
 
 void nn_free(NN nn) {
-    for (size_t i = 0; i < nn.count; ++i) {
+    for (size_t i{}; i < nn.count; ++i) {
         CUDA_CHECK(cudaFree(nn.w[i].es));
         CUDA_CHECK(cudaFree(nn.b[i].es));
         CUDA_CHECK(cudaFree(nn.a[i].es));
@@ -420,11 +426,11 @@ void nn_free(NN nn) {
 }
 
 void nn_save(NN nn, const char* path) {
-    FILE* f = fopen(path, "wb");
+    FILE* f{fopen(path, "wb")};
     GNN_ASSERT(f);
 
     nn_write_u64(f, nn.count);
-    for (size_t i = 0; i < nn.count; ++i) {
+    for (size_t i{}; i < nn.count; ++i) {
         nn_write_u64(f, nn.w[i].rows);
         nn_write_u64(f, nn.w[i].cols);
         nn_mat_write(f, nn.w[i]);
@@ -435,16 +441,17 @@ void nn_save(NN nn, const char* path) {
 }
 
 void nn_load(NN nn, const char* path) {
-    FILE* f = fopen(path, "rb");
+    FILE* f{fopen(path, "rb")};
     GNN_ASSERT(f);
 
-    uint64_t count = nn_read_u64(f);
+    uint64_t count{nn_read_u64(f)};
     GNN_ASSERT(count == nn.count);
     (void) count;
 
-    for (size_t i = 0; i < nn.count; ++i) {
-        uint64_t r = nn_read_u64(f);
-        uint64_t c = nn_read_u64(f);
+    uint64_t r, c;
+    for (size_t i{}; i < nn.count; ++i) {
+        r = nn_read_u64(f);
+        c = nn_read_u64(f);
         GNN_ASSERT(r == nn.w[i].rows && c == nn.w[i].cols);
         (void) r;
         (void) c;
@@ -457,7 +464,7 @@ void nn_load(NN nn, const char* path) {
 
 void nn_print(NN nn, const char* name) {
     printf("%s\n", name);
-    for (size_t i = 0; i < nn.count; ++i) {
+    for (size_t i{}; i < nn.count; ++i) {
         mat_print(nn.w[i], "w");
         mat_print(nn.b[i], "b");
     }

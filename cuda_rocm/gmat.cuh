@@ -1,6 +1,6 @@
-#pragma once
+#ifndef GMAT_CUH
+#define GMAT_CUH
 
-//maybe idk
 #ifdef GMAT_HIP
 #include <hip/hip_runtime.h>
 #define cudaError_t hipError_t
@@ -35,12 +35,10 @@
 #define MAT_RAND_SEED 16122008
 #endif //MAT_RAND_SEED
 
-typedef struct {
-    size_t rows;
-    size_t cols;
-    size_t stride;
+struct Mat {
+    unsigned int rows, cols, stride;
     float *es;
-} Mat;
+};
 
 //TILE * TILE <= 1024 (32 max)
 #define TILE 32
@@ -89,6 +87,9 @@ __global__ void mat_momentum_helper_kernel(Mat dst, Mat m, Mat v, float rate);
 MAT_HOST_DEVICE void mat_momentum_helper(Mat dst, Mat m, Mat v, float rate);
 __global__ void mat_adam_helper_kernel(Mat dst, Mat m, Mat m1, Mat m2, size_t t, float rate);
 MAT_HOST_DEVICE void mat_adam_helper(Mat dst, Mat m, Mat m1, Mat m2, size_t t, float rate);
+
+__global__ void mat_pool_max_kernel(Mat dst, Mat m, size_t fx, size_t fy, size_t sx, size_t sy);
+MAT_HOST_DEVICE void mat_pool_max(Mat dst, Mat m, const size_t* p);
 
 __global__ void mat_sum_bias_kernel(Mat dst, Mat m);
 MAT_HOST_DEVICE void mat_sum_bias(Mat dst, Mat m);
@@ -155,19 +156,19 @@ static __device__ __forceinline__ float leaky_reluf_d(float x) {
 }
 
 static __device__ __forceinline__ void softmaxf_d(Mat m, size_t i) {
-    float x = MAT_AT(m, i, 0);
-    for (size_t j = 1; j < m.cols; ++j)
+    float x{MAT_AT(m, i, 0)};
+    for (size_t j{1}; j < m.cols; ++j)
         x = fmaxf(x, MAT_AT(m, i, j));
 
-    float s = 0;
-    for (size_t j = 0; j < m.cols; ++j) {
-        float e = expf(MAT_AT(m, i, j) - x);
+    float s{}, e{};
+    for (size_t j{}; j < m.cols; ++j) {
+        e = expf(MAT_AT(m, i, j) - x);
         MAT_AT(m, i, j) = e;
         s += e;
     }
 
-    float inv_s = 1.f / s;
-    for (size_t j = 0; j < m.cols; ++j) MAT_AT(m, i, j) *= inv_s;
+    float inv_s{1.f / s};
+    for (size_t j{}; j < m.cols; ++j) MAT_AT(m, i, j) *= inv_s;
 }
 
 __device__ __forceinline__ uint64_t splitmix64(uint64_t x) {
@@ -178,10 +179,11 @@ __device__ __forceinline__ uint64_t splitmix64(uint64_t x) {
 }
 
 __device__ __forceinline__ float rand_float(uint64_t seed, uint64_t i) {
-    uint64_t r = splitmix64(splitmix64(seed) ^ i);
+    uint64_t r{splitmix64(splitmix64(seed) ^ i)};
     return (float) ((r >> 40) * (1.f / 16777216.f));
 }
 
+#endif //GMAT_CUH
 #ifdef GMAT_IMPLEMENTATION
 
 //CUDA CHECK
@@ -212,7 +214,7 @@ Mat mat_alloc(size_t rows, size_t cols) {
 }
 
 Mat mat_alloc_from(size_t rows, size_t cols, size_t stride, const float* h_es) {
-    Mat m = mat_alloc(rows, cols);
+    Mat m{mat_alloc(rows, cols)};
     CUDA_CHECK(cudaMemcpy2D(
                 m.es, m.stride * sizeof(float),
                 h_es, stride * sizeof(float),
@@ -222,9 +224,9 @@ Mat mat_alloc_from(size_t rows, size_t cols, size_t stride, const float* h_es) {
 }
 
 Mat mat_alloc_feature_map(size_t m_sz, size_t k_sz, size_t p, size_t c_stride) {
-    size_t num = m_sz - k_sz + 2 * p;
+    size_t num{m_sz - k_sz + 2 * p};
     GNN_ASSERT(num % c_stride == 0);
-    size_t dim = 1 + num / c_stride;
+    size_t dim{1 + num / c_stride};
     return mat_alloc(dim, dim);
 }
 
@@ -233,32 +235,32 @@ Mat mat_alloc_pad(Mat m, size_t p_size) {
 }
 
 __global__ void mat_fill_contiguous_kernel(float* p, float n, size_t area) {
-    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
-    size_t stride = (size_t) gridDim.x * blockDim.x;
+    size_t i{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+    size_t stride{(size_t) gridDim.x * blockDim.x};
 
     for (; i < area; i += stride)
         p[i] = n;
 }
 
 void mat_fill_contiguous(Mat m, float n) {
-    unsigned int threads = 256;
-    size_t area = (size_t) m.rows * m.cols;
-    unsigned int blocks = (unsigned int) ((area + threads - 1) / threads);
+    unsigned int threads{256};
+    size_t area{(size_t) m.rows * m.cols};
+    unsigned int blocks{(unsigned int) ((area + threads - 1) / threads)};
 
     mat_fill_contiguous_kernel<<<blocks, threads>>>(m.es, n, area);
     CUDA_CHECK(cudaGetLastError());
 }
 
 __global__ void mat_fill_noncontiguous_kernel(Mat m, float n) {
-    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
 
     if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = n;
 }
 
 void mat_fill_noncontiguous(Mat m, float n) {
-    dim3 threads(32, 8);
-    dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
+    dim3 threads{32, 8};
+    dim3 blocks{(m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y};
 
     mat_fill_noncontiguous_kernel<<<blocks, threads>>>(m, n);
     CUDA_CHECK(cudaGetLastError());
@@ -269,8 +271,8 @@ void mat_fill(Mat m, float n) {
 }
 
 __global__ void mat_pad_fill(Mat dst, float p_num, size_t p_size) {
-    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
 
     if (i < dst.rows && j < dst.cols)
         if (i < p_size || j < p_size || (i >= dst.rows - p_size && i < dst.rows) || (j >= dst.cols - p_size && j < dst.cols))
@@ -278,8 +280,8 @@ __global__ void mat_pad_fill(Mat dst, float p_num, size_t p_size) {
 }
 
 __global__ void mat_pad_inject(Mat dst, Mat m, size_t p_size) {
-    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
 
     if (i < m.rows && j < m.cols) MAT_AT(dst, i + p_size, j + p_size) = MAT_AT(m, i, j);
 }
@@ -288,60 +290,58 @@ void mat_pad(Mat dst, Mat m, float p_num, size_t p_size) {
     GNN_ASSERT(dst.rows == m.rows + 2 * p_size);
     GNN_ASSERT(dst.cols == m.cols + 2 * p_size);
 
-    dim3 threads(32, 8);
-    dim3 i_blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
+    dim3 threads{32, 8};
+    dim3 i_blocks{(m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y};
+
     mat_pad_inject<<<i_blocks, threads>>>(dst, m, p_size);
     CUDA_CHECK(cudaGetLastError());
 
-    dim3 f_blocks((dst.cols + threads.x - 1) / threads.x, (dst.rows + threads.y - 1) / threads.y);
+    dim3 f_blocks{(dst.cols + threads.x - 1) / threads.x, (dst.rows + threads.y - 1) / threads.y};
     mat_pad_fill<<<f_blocks, threads>>>(dst, p_num, p_size);
     CUDA_CHECK(cudaGetLastError());
 }
 
 static uint64_t mat_rand_seed = MAT_RAND_SEED;
 
-void mat_set_seed(uint64_t seed) {
-    mat_rand_seed = seed;
-}
+void mat_set_seed(uint64_t seed) {mat_rand_seed = seed;}
 
 __global__ void mat_rand_contiguous_kernel(float* p, float low, float high, size_t area, uint64_t seed) {
-    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
-    size_t stride = (size_t) gridDim.x * blockDim.x;
+    size_t i{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+    size_t stride{(size_t) gridDim.x * blockDim.x};
 
     for (; i < area; i += stride)
         p[i] = rand_float(seed, i) * (high - low) + low;
 }
 
 void mat_rand_contiguous(Mat m, float low, float high, uint64_t seed) {
-    unsigned int threads = 256;
-    size_t area = (size_t) m.rows * m.cols;
-    unsigned int blocks = (unsigned int) ((area + threads - 1) / threads);
+    unsigned int threads{256};
+    size_t area{(size_t) m.rows * m.cols};
+    unsigned int blocks{(unsigned int) ((area + threads - 1) / threads)};
 
     mat_rand_contiguous_kernel<<<blocks, threads>>>(m.es, low, high, area, seed);
     CUDA_CHECK(cudaGetLastError());
 }
 
 __global__ void mat_rand_noncontiguous_kernel(Mat m, float low, float high, uint64_t seed) {
-    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
 
     if (i < m.rows && j < m.cols) {
-        size_t true_i = i * m.cols + j;
+        size_t true_i{i * m.cols + j};
         MAT_AT(m, i, j) = rand_float(seed, true_i) * (high - low) + low;
     }
 }
 
 void mat_rand_noncontiguous(Mat m, float low, float high, uint64_t seed) {
-    dim3 threads(32, 8);
-    dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
+    dim3 threads{32, 8};
+    dim3 blocks{(m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y};
 
     mat_rand_noncontiguous_kernel<<<blocks, threads>>>(m, low, high, seed);
     CUDA_CHECK(cudaGetLastError());
 }
 
 void mat_rand(Mat m, float low, float high) {
-    uint64_t seed = mat_rand_seed++;
-    //uint64_t seed = mat_rand_seed;
+    uint64_t seed{++mat_rand_seed};
     (m.stride == m.cols) ? mat_rand_contiguous(m, low, high, seed) : mat_rand_noncontiguous(m, low, high, seed);
 }
 
@@ -364,31 +364,31 @@ MAT_HOST_DEVICE Mat mat_rows(Mat m, size_t row, size_t n) {
 }
 
 __global__ void mat_copy_contiguous_kernel(float* dst, const float* src, size_t area) {
-    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
-    size_t stride = (size_t) gridDim.x * blockDim.x;
+    size_t i{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+    size_t stride{(size_t) gridDim.x * blockDim.x};
 
     for (; i < area; i += stride) dst[i] = src[i];
 }
 
 MAT_HOST_DEVICE void mat_copy_contiguous(Mat dst, Mat m) {
-    unsigned int threads = 256;
-    size_t area = (size_t) m.rows * m.cols;
-    unsigned int blocks = (unsigned int) ((area + threads - 1) / threads);
+    unsigned int threads{256};
+    size_t area{(size_t) m.rows * m.cols};
+    unsigned int blocks{(unsigned int) ((area + threads - 1) / threads)};
 
     mat_copy_contiguous_kernel<<<blocks, threads>>>(dst.es, m.es, area);
     CUDA_CHECK(cudaGetLastError());
 }
 
 __global__ void mat_copy_noncontiguous_kernel(Mat dst, Mat m) {
-    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
 
     if (i < m.rows && j < m.cols) MAT_AT(dst, i, j) = MAT_AT(m, i, j);
 }
 
 MAT_HOST_DEVICE void mat_copy_noncontiguous(Mat dst, Mat m) {
-    dim3 threads(32, 8);
-    dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
+    dim3 threads{32, 8};
+    dim3 blocks{(m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y};
     mat_copy_noncontiguous_kernel<<<blocks, threads>>>(dst, m);
     CUDA_CHECK(cudaGetLastError());
 }
@@ -400,8 +400,8 @@ MAT_HOST_DEVICE void mat_copy(Mat dst, Mat m) {
 //MATRIX OPS
 
 __global__ void mat_sgd_helper_kernel(Mat dst, Mat m, float s) {
-    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
 
     if (i < m.rows && j < m.cols)
         MAT_AT(dst, i, j) -= s * MAT_AT(m, i, j);
@@ -411,15 +411,15 @@ MAT_HOST_DEVICE void mat_sgd_helper(Mat dst, Mat m, float s) {
     GNN_ASSERT(dst.rows == m.rows);
     GNN_ASSERT(dst.cols == m.cols);
 
-    dim3 threads(32, 8);
-    dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
+    dim3 threads{32, 8};
+    dim3 blocks{(m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y};
     mat_sgd_helper_kernel<<<blocks, threads>>>(dst, m, s);
     CUDA_CHECK(cudaGetLastError());
 }
 
 __global__ void mat_momentum_helper_kernel(Mat dst, Mat m, Mat v, float rate) {
-    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
 
     if (i < dst.rows && j < dst.cols) {
         MAT_AT(v, i, j) = 0.9f * MAT_AT(v, i, j) + MAT_AT(m, i, j);
@@ -433,27 +433,25 @@ MAT_HOST_DEVICE void mat_momentum_helper(Mat dst, Mat m, Mat v, float rate) {
     GNN_ASSERT(dst.rows == v.rows);
     GNN_ASSERT(dst.cols == v.cols);
 
-    dim3 threads(32, 8);
-    dim3 blocks((unsigned int) ((dst.cols + threads.x - 1) / threads.x),
-                (unsigned int) ((dst.rows + threads.y - 1) / threads.y));
+    dim3 threads{32, 8};
+    dim3 blocks{(unsigned int) ((dst.cols + threads.x - 1) / threads.x),
+                (unsigned int) ((dst.rows + threads.y - 1) / threads.y)};
     mat_momentum_helper_kernel<<<blocks, threads>>>(dst, m, v, rate);
     CUDA_CHECK(cudaGetLastError());
 }
 
 __global__ void mat_adam_helper_kernel(Mat dst, Mat m, Mat m1, Mat m2, size_t t, float rate) {
-    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
 
     if (i < dst.rows && j < dst.cols) {
-        float g = MAT_AT(m, i, j);
-        float a = 0.9f * MAT_AT(m1, i, j) + 0.1f * g;
-        float b = 0.999f * MAT_AT(m2, i, j) + 0.001f * g * g;
+        float g{MAT_AT(m, i, j)};
+        float a{0.9f * MAT_AT(m1, i, j) + 0.1f * g};
+        float b{0.999f * MAT_AT(m2, i, j) + 0.001f * g * g};
         MAT_AT(m1, i, j) = a;
         MAT_AT(m2, i, j) = b;
 
-        float c1 = 1.f - powf(0.9f, t);
-        float c2 = 1.f - powf(0.999f, t);
-        MAT_AT(dst, i, j) -= rate * (a / c1) / (sqrtf(b / c2) + 1e-8f);
+        MAT_AT(dst, i, j) -= rate * (a / (1.f - powf(0.9f, t))) / (sqrtf(b / (1.f - powf(0.999f, t))) + 1e-8f);
     }
 }
 
@@ -463,16 +461,48 @@ MAT_HOST_DEVICE void mat_adam_helper(Mat dst, Mat m, Mat m1, Mat m2, size_t t, f
     GNN_ASSERT(dst.rows == m1.rows && dst.cols == m1.cols);
     GNN_ASSERT(dst.rows == m2.rows && dst.cols == m2.cols);
 
-    dim3 threads(32, 8);
-    dim3 blocks((unsigned int) ((dst.cols + threads.x - 1) / threads.x),
-                (unsigned int) ((dst.rows + threads.y - 1) / threads.y));
+    dim3 threads{32, 8};
+    dim3 blocks{(unsigned int) ((dst.cols + threads.x - 1) / threads.x),
+                (unsigned int) ((dst.rows + threads.y - 1) / threads.y)};
     mat_adam_helper_kernel<<<blocks, threads>>>(dst, m, m1, m2, t, rate);
     CUDA_CHECK(cudaGetLastError());
 }
 
+__global__ void mat_pool_max_kernel(Mat dst, Mat m, size_t fx, size_t fy, size_t sx, size_t sy) {
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+
+    if (i < dst.rows && j < dst.cols) {
+        size_t r0{i * sy};
+        size_t c0{j * sx};
+
+        float best{MAT_AT(m, r0, c0)};
+        for (size_t y{}; y < fy; ++y)
+            for (size_t x{}; x < fx; ++x)
+                best = fmaxf(best, MAT_AT(m, r0 + y, c0 + x));
+
+        MAT_AT(dst, i, j) = best;
+    } 
+}
+
+MAT_HOST_DEVICE void mat_pool_max(Mat dst, Mat m, const size_t* sf) {
+    size_t sx{sf[0]}, sy{sf[1]}, fx{sf[2]}, fy{sf[3]};
+
+    GNN_ASSERT(sx > 0 && sy > 0 && fx > 0 && fy > 0);
+    GNN_ASSERT(m.rows >= fy && m.cols >= fx);
+    GNN_ASSERT(dst.rows == (m.rows - fy) / sy + 1);
+    GNN_ASSERT(dst.cols == (m.cols - fx) / sx + 1);
+
+    dim3 threads{32, 8};
+    dim3 blocks{(unsigned int) ((dst.cols + threads.x - 1) / threads.x),
+                (unsigned int) ((dst.rows + threads.y - 1) / threads.y)};
+    mat_pool_max_kernel<<<blocks, threads>>>(dst, m, fx, fy, sx, sy);
+    CUDA_CHECK(cudaGetLastError());
+}
+
 __global__ void mat_sum_bias_kernel(Mat dst, Mat m) {
-    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
 
     if (i < dst.rows && j < dst.cols)
         MAT_AT(dst, i, j) += MAT_AT(m, 0, j);
@@ -482,21 +512,19 @@ MAT_HOST_DEVICE void mat_sum_bias(Mat dst, Mat m) {
     GNN_ASSERT(m.rows == 1);
     GNN_ASSERT(m.cols == dst.cols);
 
-    dim3 threads(32, 8);
-    dim3 blocks(
-        (unsigned int) ((dst.cols + threads.x - 1) / threads.x),
-        (unsigned int) ((dst.rows + threads.y - 1) / threads.y)
-    );
+    dim3 threads{32, 8};
+    dim3 blocks{(unsigned int) ((dst.cols + threads.x - 1) / threads.x),
+                (unsigned int) ((dst.rows + threads.y - 1) / threads.y)};
     mat_sum_bias_kernel<<<blocks, threads>>>(dst, m);
     CUDA_CHECK(cudaGetLastError());
 }
 
 __global__ void mat_sum_collapse_kernel(Mat dst, Mat m) {
-    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
     if (j >= m.cols) return;
 
-    float s = 0;
-    for (size_t i = 0; i < m.rows; ++i)
+    float s{};
+    for (size_t i{}; i < m.rows; ++i)
         s += MAT_AT(m, i, j);
     MAT_AT(dst, 0, j) = s;
 }
@@ -505,38 +533,38 @@ MAT_HOST_DEVICE void mat_sum_collapse(Mat dst, Mat m) {
     GNN_ASSERT(dst.rows == 1);
     GNN_ASSERT(dst.cols == m.cols);
 
-    unsigned int threads = 256;
-    unsigned int blocks = (unsigned int) ((m.cols + threads - 1) / threads);
+    unsigned int threads{256};
+    unsigned int blocks{(unsigned int) ((m.cols + threads - 1) / threads)};
     mat_sum_collapse_kernel<<<blocks, threads>>>(dst, m);
     CUDA_CHECK(cudaGetLastError());
 }
 
 __global__ void mat_sum_contiguous_kernel(float* dst, const float* src, size_t area) {
-    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
-    size_t stride = (size_t) gridDim.x * blockDim.x;
+    size_t i{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+    size_t stride{(size_t) gridDim.x * blockDim.x};
 
     for (; i < area; i += stride) dst[i] += src[i];
 }
 
 void mat_sum_contiguous(Mat dst, Mat m) {
-    unsigned int threads = 256;
-    size_t area = (size_t) m.rows * m.cols;
-    unsigned int blocks = (unsigned int) ((area + threads - 1) / threads);
+    unsigned int threads{256};
+    size_t area{(size_t) m.rows * m.cols};
+    unsigned int blocks{(unsigned int) ((area + threads - 1) / threads)};
 
     mat_sum_contiguous_kernel<<<blocks, threads>>>(dst.es, m.es, area);
     CUDA_CHECK(cudaGetLastError());
 }
 
 __global__ void mat_sum_noncontiguous_kernel(Mat dst, Mat m) {
-    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
 
     if (i < m.rows && j < m.cols) MAT_AT(dst, i, j) += MAT_AT(m, i, j);
 }
 
 void mat_sum_noncontiguous(Mat dst, Mat m) {
-    dim3 threads(32, 8);
-    dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
+    dim3 threads{32, 8};
+    dim3 blocks{(m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y};
     mat_sum_noncontiguous_kernel<<<blocks, threads>>>(dst, m);
     CUDA_CHECK(cudaGetLastError());
 }
@@ -552,18 +580,18 @@ __global__ void mat_dot_ta_kernel(Mat dst, Mat a, Mat b) {
     __shared__ float As[TILE][TILE];
     __shared__ float Bs[TILE][TILE];
 
-    size_t i = (size_t) blockIdx.y * TILE + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * TILE + threadIdx.x;
-    float res = 0;
+    size_t i{(size_t) blockIdx.y * TILE + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * TILE + threadIdx.x};
+    float res{};
 
-    for (size_t t = 0; t < a.rows; t += TILE) {
-        size_t ka = t + threadIdx.x;
-        size_t kb = t + threadIdx.y;
+    for (size_t t{}; t < a.rows; t += TILE) {
+        size_t ka{t + threadIdx.x};
+        size_t kb{t + threadIdx.y};
         As[threadIdx.y][threadIdx.x] = (i < a.cols && ka < a.rows) ? MAT_AT(a, ka, i) : 0;
         Bs[threadIdx.y][threadIdx.x] = (kb < b.rows && j < b.cols) ? MAT_AT(b, kb, j) : 0;
         __syncthreads();
 
-        for (int k = 0; k < TILE; ++k)
+        for (int k{}; k < TILE; ++k)
             res += As[threadIdx.y][k] * Bs[k][threadIdx.x];
         __syncthreads();
     }
@@ -577,9 +605,9 @@ MAT_HOST_DEVICE void mat_dot_ta(Mat dst, Mat a, Mat b) {
     GNN_ASSERT(dst.rows == a.cols);
     GNN_ASSERT(dst.cols == b.cols);
 
-    dim3 threads(TILE, TILE);
-    dim3 blocks((unsigned int) ((b.cols + TILE - 1) / TILE),
-                (unsigned int) ((a.cols + TILE - 1) / TILE));
+    dim3 threads{TILE, TILE};
+    dim3 blocks{(unsigned int) ((b.cols + TILE - 1) / TILE),
+                (unsigned int) ((a.cols + TILE - 1) / TILE)};
     mat_dot_ta_kernel<<<blocks, threads>>>(dst, a, b);
     CUDA_CHECK(cudaGetLastError());
 }
@@ -588,18 +616,18 @@ __global__ void mat_dot_tb_kernel(Mat dst, Mat a, Mat b) {
     __shared__ float As[TILE][TILE];
     __shared__ float Bs[TILE][TILE];
 
-    size_t i = (size_t) blockIdx.y * TILE + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * TILE + threadIdx.x;
-    float res = 0;
+    size_t i{(size_t) blockIdx.y * TILE + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * TILE + threadIdx.x};
+    float res{};
 
-    for (size_t t = 0; t < a.cols; t += TILE) {
-        size_t ka = t + threadIdx.x;
-        size_t kb = t + threadIdx.y;
+    for (size_t t{}; t < a.cols; t += TILE) {
+        size_t ka{t + threadIdx.x};
+        size_t kb{t + threadIdx.y};
         As[threadIdx.y][threadIdx.x] = (i < a.rows && ka < a.cols) ? MAT_AT(a, i, ka) : 0;
         Bs[threadIdx.y][threadIdx.x] = (j < b.rows && kb < b.cols) ? MAT_AT(b, j, kb) : 0;
         __syncthreads();
 
-        for (int k = 0; k < TILE; ++k)
+        for (int k{}; k < TILE; ++k)
             res += As[threadIdx.y][k] * Bs[k][threadIdx.x];
         __syncthreads();
     }
@@ -613,9 +641,9 @@ MAT_HOST_DEVICE void mat_dot_tb(Mat dst, Mat a, Mat b) {
     GNN_ASSERT(dst.rows == a.rows);
     GNN_ASSERT(dst.cols == b.rows);
 
-    dim3 threads(TILE, TILE);
-    dim3 blocks((unsigned int) ((b.rows + TILE - 1) / TILE),
-                (unsigned int) ((a.rows + TILE - 1) / TILE));
+    dim3 threads{TILE, TILE};
+    dim3 blocks{(unsigned int) ((b.rows + TILE - 1) / TILE),
+                (unsigned int) ((a.rows + TILE - 1) / TILE)};
     mat_dot_tb_kernel<<<blocks, threads>>>(dst, a, b);
     CUDA_CHECK(cudaGetLastError());
 }
@@ -625,18 +653,18 @@ __global__ void mat_dot_kernel(Mat dst, Mat a, Mat b) {
     __shared__ float As[TILE][TILE];
     __shared__ float Bs[TILE][TILE];
 
-    size_t i = (size_t) blockIdx.y * TILE + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * TILE + threadIdx.x;
-    float res = 0;
+    size_t i{(size_t) blockIdx.y * TILE + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * TILE + threadIdx.x};
+    float res{};
 
-    for (size_t t = 0; t < a.cols; t += TILE) {
-        size_t a_col = t + threadIdx.x;
-        size_t b_row = t + threadIdx.y;
+    for (size_t t{}; t < a.cols; t += TILE) {
+        size_t a_col{t + threadIdx.x};
+        size_t b_row{t + threadIdx.y};
         As[threadIdx.y][threadIdx.x] = (i < a.rows && a_col < a.cols) ? a.es[i * a.cols + a_col] : 0;
         Bs[threadIdx.y][threadIdx.x] = (b_row < a.cols && j < b.cols) ? b.es[b_row * b.cols + j] : 0;
         __syncthreads();
 
-        for (int k = 0; k < TILE; ++k)
+        for (int k{}; k < TILE; ++k)
             res += As[threadIdx.y][k] * Bs[k][threadIdx.x];
         __syncthreads();
     }
@@ -649,9 +677,9 @@ void mat_dot(Mat dst, Mat a, Mat b) {
     GNN_ASSERT(dst.rows == a.rows);
     GNN_ASSERT(dst.cols == b.cols);
 
-    dim3 threads(TILE, TILE);
-    dim3 blocks((unsigned int) ((b.cols + TILE - 1) / TILE),
-                (unsigned int) ((a.rows + TILE - 1) / TILE));
+    dim3 threads{TILE, TILE};
+    dim3 blocks{(unsigned int) ((b.cols + TILE - 1) / TILE),
+                (unsigned int) ((a.rows + TILE - 1) / TILE)};
 
     mat_dot_kernel<<<blocks, threads>>>(dst, a, b);
     CUDA_CHECK(cudaGetLastError());
@@ -660,31 +688,31 @@ void mat_dot(Mat dst, Mat a, Mat b) {
 //ACTIVATIONS
 
 __global__ void mat_sig_contiguous_kernel(float* p, size_t area) {
-    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
-    size_t stride = (size_t) gridDim.x * blockDim.x;
+    size_t i{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+    size_t stride{(size_t) gridDim.x * blockDim.x};
 
     for (; i < area; i += stride) p[i] = sigmoidf_d(p[i]);
 }
 
 void mat_sig_contiguous(Mat m) {
-    unsigned int threads = 256;
-    size_t area = (size_t) m.rows * m.cols;
-    unsigned int blocks = (unsigned int) ((area + threads - 1) / threads);
+    unsigned int threads{256};
+    size_t area{(size_t) m.rows * m.cols};
+    unsigned int blocks{(unsigned int) ((area + threads - 1) / threads)};
 
     mat_sig_contiguous_kernel<<<blocks, threads>>>(m.es, area);
     CUDA_CHECK(cudaGetLastError());
 }
 
 __global__ void mat_sig_noncontiguous_kernel(Mat m) {
-    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
 
     if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = sigmoidf_d(MAT_AT(m, i, j));
 }
 
 void mat_sig_noncontiguous(Mat m) {
-    dim3 threads(32, 8);
-    dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
+    dim3 threads{32, 8};
+    dim3 blocks{(m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y};
     mat_sig_noncontiguous_kernel<<<blocks, threads>>>(m);
     CUDA_CHECK(cudaGetLastError());
 }
@@ -694,31 +722,31 @@ void mat_sig(Mat m) {
 }
 
 __global__ void mat_tanh_contiguous_kernel(float* p, size_t area) {
-    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
-    size_t stride = (size_t) gridDim.x * blockDim.x;
+    size_t i{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+    size_t stride{(size_t) gridDim.x * blockDim.x};
 
     for (; i < area; i += stride) p[i] = tanhf_d(p[i]);
 }
 
 void mat_tanh_contiguous(Mat m) {
-    unsigned int threads = 256;
-    size_t area = (size_t) m.rows * m.cols;
-    unsigned int blocks = (unsigned int) ((area + threads - 1) / threads);
+    unsigned int threads{256};
+    size_t area{(size_t) m.rows * m.cols};
+    unsigned int blocks{(unsigned int) ((area + threads - 1) / threads)};
 
     mat_tanh_contiguous_kernel<<<blocks, threads>>>(m.es, area);
     CUDA_CHECK(cudaGetLastError());
 }
 
 __global__ void mat_tanh_noncontiguous_kernel(Mat m) {
-    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
 
     if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = tanhf_d(MAT_AT(m, i, j));
 }
 
 void mat_tanh_noncontiguous(Mat m) {
-    dim3 threads(32, 8);
-    dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
+    dim3 threads{32, 8};
+    dim3 blocks{(m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y};
     mat_tanh_noncontiguous_kernel<<<blocks, threads>>>(m);
     CUDA_CHECK(cudaGetLastError());
 }
@@ -728,31 +756,31 @@ void mat_tanh(Mat m) {
 }
 
 __global__ void mat_relu_contiguous_kernel(float* p, size_t area) {
-    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
-    size_t stride = (size_t) gridDim.x * blockDim.x;
+    size_t i{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+    size_t stride{(size_t) gridDim.x * blockDim.x};
 
     for (; i < area; i += stride) p[i] = reluf_d(p[i]);
 }
 
 void mat_relu_contiguous(Mat m) {
-    unsigned int threads = 256;
-    size_t area = (size_t) m.rows * m.cols;
-    unsigned int blocks = (unsigned int) ((area + threads - 1) / threads);
+    unsigned int threads{256};
+    size_t area{(size_t) m.rows * m.cols};
+    unsigned int blocks{(unsigned int) ((area + threads - 1) / threads)};
 
     mat_relu_contiguous_kernel<<<blocks, threads>>>(m.es, area);
     CUDA_CHECK(cudaGetLastError());
 }
 
 __global__ void mat_relu_noncontiguous_kernel(Mat m) {
-    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
 
     if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = reluf_d(MAT_AT(m, i, j));
 }
 
 void mat_relu_noncontiguous(Mat m) {
-    dim3 threads(32, 8);
-    dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
+    dim3 threads{32, 8};
+    dim3 blocks{(m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y};
     mat_relu_noncontiguous_kernel<<<blocks, threads>>>(m);
     CUDA_CHECK(cudaGetLastError());
 }
@@ -762,31 +790,31 @@ void mat_relu(Mat m) {
 }
 
 __global__ void mat_leaky_relu_contiguous_kernel(float* p, size_t area) {
-    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
-    size_t stride = (size_t) gridDim.x * blockDim.x;
+    size_t i{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+    size_t stride{(size_t) gridDim.x * blockDim.x};
 
     for (; i < area; i += stride) p[i] = leaky_reluf_d(p[i]);
 }
 
 void mat_leaky_relu_contiguous(Mat m) {
-    unsigned int threads = 256;
-    size_t area = (size_t) m.rows * m.cols;
-    unsigned int blocks = (unsigned int) ((area + threads - 1) / threads);
+    unsigned int threads{256};
+    size_t area{(size_t) m.rows * m.cols};
+    unsigned int blocks{(unsigned int) ((area + threads - 1) / threads)};
 
     mat_leaky_relu_contiguous_kernel<<<blocks, threads>>>(m.es, area);
     CUDA_CHECK(cudaGetLastError());
 }
 
 __global__ void mat_leaky_relu_noncontiguous_kernel(Mat m) {
-    size_t i = (size_t) blockIdx.y * blockDim.y + threadIdx.y;
-    size_t j = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
 
     if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = leaky_reluf_d(MAT_AT(m, i, j));
 }
 
 void mat_leaky_relu_noncontiguous(Mat m) {
-    dim3 threads(32, 8);
-    dim3 blocks((m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y);
+    dim3 threads{32, 8};
+    dim3 blocks{(m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y};
     mat_leaky_relu_noncontiguous_kernel<<<blocks, threads>>>(m);
     CUDA_CHECK(cudaGetLastError());
 }
@@ -796,13 +824,13 @@ void mat_leaky_relu(Mat m) {
 }
 
 __global__ void mat_softmax_kernel(Mat m) {
-    size_t i = (size_t) blockIdx.x * blockDim.x + threadIdx.x;
+    size_t i{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
     if (i < m.rows) softmaxf_d(m, i);
 }
 
 MAT_HOST_DEVICE void mat_softmax(Mat m) {
-    unsigned int threads = 256;
-    unsigned int blocks = (unsigned int) ((m.rows + threads - 1) / threads);
+    unsigned int threads{256};
+    unsigned int blocks{(unsigned int) ((m.rows + threads - 1) / threads)};
     mat_softmax_kernel<<<blocks, threads>>>(m);
     CUDA_CHECK(cudaGetLastError());
 }
@@ -812,10 +840,9 @@ void mat_print(Mat m, const char *name) {
     CUDA_CHECK(cudaMemcpy(host_es, m.es, m.rows * m.stride * sizeof(float), cudaMemcpyDeviceToHost));
 
     printf("%s\n", name);
-    for (size_t i = 0; i < m.rows; ++i) {
-        for (size_t j = 0; j < m.cols; ++j) {
-            printf("    %f ", host_es[i*m.stride + j]);
-        }
+    for (size_t i{}; i < m.rows; ++i) {
+        for (size_t j{}; j < m.cols; ++j)
+            printf("    %f ", VEC_AT(host_es, i, j));
         printf("\n");
     }
     printf("\n");
