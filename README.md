@@ -12,7 +12,7 @@ Reaches **[98.13]%** on MNIST (test set).
 
 Originally supposed to be a CUDA port of [tsoding/nn.h](https://github.com/tsoding/nn.h), following his [Machine Learning in C series](https://www.youtube.com/watch?v=PGSba51aRYU&list=PLpM-Dvs8t0VZPZKggcql-MmjaBdZKeDMw) but later added new things other than FNNs.
 
-`CIFER_10` and `CIFER_100` datasets are from this paper: [Learning Multiple Layers of Features from Tiny Images](https://cave.cs.toronto.edu/kriz/learning-features-2009-TR.pdf).
+`CIFER_10` and `CIFER_100` datasets are from this paper: [Learning Multiple Layers of Features from Tiny Images, Alex Krizhevsky, 2009.](https://cave.cs.toronto.edu/kriz/learning-features-2009-TR.pdf).
 
 ## Build
 
@@ -32,7 +32,7 @@ Requires ROCm and a supported AMD GPU. Define `GMAT_HIP` to switch the CUDA runt
 hipcc -O2 -DGMAT_HIP --offload-arch=gfxXXXX gnn.cu -o gnn
 ```
 
-Tested on: [GPU / ROCm version, or "CUDA only so far"].
+Tested on: NVIDIA RTX 5050 and GTX 1060 (need an AMD tester)
 
 ## Usage
 
