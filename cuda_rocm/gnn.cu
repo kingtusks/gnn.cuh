@@ -1,7 +1,7 @@
 #define GNN_IMPLEMENTATION
 #include "gnn.cuh"
 #define MNIST_IMPLEMENTATION
-#include "../mnist/mnist.h"
+#include "../datasets/mnist/mnist.h"
 
 float xor_td[] = {
     0, 0, 0,
@@ -41,8 +41,8 @@ void xor_nn() {
 }
 
 void mnist_nn() {
-    std::vector<float> mnist_td = mnist_load_td("../mnist/data/train-images.idx3-ubyte", "../mnist/data/train-labels.idx1-ubyte", 60000);
-    std::vector<float> mnist_ttd = mnist_load_td("../mnist/data/t10k-images.idx3-ubyte", "../mnist/data/t10k-labels.idx1-ubyte", 10000);
+    std::vector<float> mnist_td = mnist_load_td("../datasets/mnist/data/train-images.idx3-ubyte", "../datasets/mnist/data/train-labels.idx1-ubyte", 60000);
+    std::vector<float> mnist_ttd = mnist_load_td("../datasets/mnist/data/t10k-images.idx3-ubyte", "../datasets/mnist/data/t10k-labels.idx1-ubyte", 10000);
     GNN_ASSERT(!mnist_td.empty() && !mnist_ttd.empty());
 
     Mat ti = mat_alloc_from(60000, MNIST_IMG_SIZE, MNIST_STRIDE, mnist_td.data());

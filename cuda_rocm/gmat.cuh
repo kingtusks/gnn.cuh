@@ -88,9 +88,9 @@ __global__ void mat_adam_helper_kernel(Mat dst, Mat m, Mat m1, Mat m2, float c1,
 MAT_HOST_DEVICE void mat_adam_helper(Mat dst, Mat m, Mat m1, Mat m2, size_t t, float rate);
 
 __global__ void mat_pool_max_kernel(Mat dst, Mat m, size_t fx, size_t fy, size_t sx, size_t sy);
-MAT_HOST_DEVICE void mat_pool_max(Mat dst, Mat m, const size_t* p);
+MAT_HOST_DEVICE void mat_pool_max(Mat dst, Mat m, const size_t* sf);
 __global__ void mat_pool_average_kernel(Mat dst, Mat m, size_t fx, size_t fy, size_t sx, size_t sy);
-MAT_HOST_DEVICE void mat_pool_average(Mat dst, Mat m, const size_t* p);
+MAT_HOST_DEVICE void mat_pool_average(Mat dst, Mat m, const size_t* sf);
 
 __global__ void mat_sum_bias_kernel(Mat dst, Mat m);
 MAT_HOST_DEVICE void mat_sum_bias(Mat dst, Mat m);
@@ -135,6 +135,12 @@ __global__ void mat_leaky_relu_noncontiguous_kernel(Mat m);
 void mat_leaky_relu_noncontiguous(Mat m);
 void mat_leaky_relu(Mat m);
 
+__global__ void mat_elu_contiguous_kernel(float* p, size_t area);
+void mat_elu_contiguous(Mat m);
+__global__ void mat_elu_noncontiguous_kernel(Mat m);
+void mat_elu_noncontiguous(Mat m);
+void mat_elu(Mat m);
+
 __global__ void mat_softmax_kernel(Mat m);
 MAT_HOST_DEVICE void mat_softmax(Mat m);
 
@@ -154,6 +160,10 @@ static __device__ __forceinline__ float reluf_d(float x) {
 
 static __device__ __forceinline__ float leaky_reluf_d(float x) {
     return fmaxf(.01f * x, x);
+}
+
+static __device__ __forceinline__ float eluf_d(float x) {
+    return fmaxf((expf(x) - 1.0f), x);
 }
 
 static __device__ __forceinline__ void softmaxf_d(Mat m, size_t i) {
@@ -520,7 +530,7 @@ __global__ void mat_pool_average_kernel(Mat dst, Mat m, size_t fx, size_t fy, si
     }
 }
 
-MAT_HOST_DEVICE void mat_pool_average(Mat dst, Mat m, const size_t* p) {
+MAT_HOST_DEVICE void mat_pool_average(Mat dst, Mat m, const size_t* sf) {
     size_t sx{sf[0]}, sy{sf[1]}, fx{sf[2]}, fy{sf[3]};
 
     GNN_ASSERT(sx > 0 && sy > 0 && fx > 0 && fy > 0);
@@ -856,6 +866,39 @@ void mat_leaky_relu_noncontiguous(Mat m) {
 
 void mat_leaky_relu(Mat m) {
     (m.stride == m.cols) ? mat_leaky_relu_contiguous(m) : mat_leaky_relu_noncontiguous(m);
+}
+
+__global__ void mat_elu_contiguous_kernel(float* p, size_t area) {
+    size_t i{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+    size_t stride{(size_t) gridDim.x * blockDim.x};
+
+    for (; i < area; i += stride) p[i] = eluf_d(p[i]);
+}
+
+void mat_elu_contiguous(Mat m) {
+    unsigned int threads{256};
+    size_t area{(size_t) m.rows * m.cols};
+    unsigned int blocks{(unsigned int) ((area + threads - 1) / threads)};
+
+    mat_elu_contiguous_kernel<<<blocks, threads>>>(m.es, area);
+    CUDA_CHECK(cudaGetLastError());
+}
+
+__global__ void mat_elu_noncontiguous_kernel(Mat m) {
+    size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+    size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+
+    if (i < m.rows && j < m.cols) MAT_AT(m, i, j) = eluf_d(MAT_AT(m, i, j));
+}
+
+void mat_elu_noncontiguous(Mat m) {
+    dim3 threads{32, 8};
+    dim3 blocks{(m.cols + threads.x - 1) / threads.x, (m.rows + threads.y - 1) / threads.y};
+    mat_elu_noncontiguous_kernel<<<blocks, threads>>>(m);
+}
+
+void mat_elu(Mat m) {
+    (m.stride == m.cols) ? mat_elu_contiguous(m) : mat_elu_noncontiguous(m);
 }
 
 __global__ void mat_softmax_kernel(Mat m) {
