@@ -26,8 +26,8 @@ void xor_nn() {
     nn_fill(v, 0);
     // nn_train(nn, g, v, ti, to, EPOCHS);
 
-    for (size_t i = 0; i < 2; ++i) {
-        for (size_t j = 0; j < 2; ++j) {
+    for (size_t i{}; i < 2; ++i) {
+        for (size_t j{}; j < 2; ++j) {
             float in[2] = {(float) i, (float) j};
             CUDA_CHECK(cudaMemcpy(NN_INPUT(nn).es, in, sizeof(in), cudaMemcpyHostToDevice));
             nn_forward(nn);
@@ -59,7 +59,6 @@ void mnist_nn() {
 
     nn_train(nn, ti, to, epochs, rate, Optimizer::SGD);
     nn_test(nn, tti, tto);
-    nn_infer(nn, mat_rows(tti, 8, 1));
     nn_free(nn);
 }
 

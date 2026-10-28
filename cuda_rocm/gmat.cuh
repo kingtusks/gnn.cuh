@@ -1,6 +1,7 @@
 #ifndef GMAT_CUH
 #define GMAT_CUH
 
+//hip translation layer (temporary)
 #ifdef GMAT_HIP
 #include <hip/hip_runtime.h>
 #define cudaError_t hipError_t
@@ -24,10 +25,10 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cmath>
-#include <stdint.h>
+#include <cstdint>
 
 #ifndef GNN_ASSERT
-#include <assert.h>
+#include <cassert>
 #define GNN_ASSERT assert
 #endif //GNN_ASSERT
 
@@ -40,11 +41,9 @@ struct Mat {
     float *es;
 };
 
-//TILE * TILE <= 1024 (32 max)
 #define TILE 32
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #define MAT_AT(m, i, j) (m).es[(i)*(m).stride + (j)]
-#define VEC_AT(v, i, j) (v)[(i)*(m).stride + (j)]
 #define MAT_PRINT(m) mat_print(m, #m)
 
 MAT_HOST_DEVICE void cuda_check(cudaError_t err, const char* file, int line);
@@ -61,7 +60,7 @@ __global__ void mat_fill_noncontiguous_kernel(Mat m, float n);
 void mat_fill_noncontiguous(Mat m, float n);
 void mat_fill(Mat m, float n);
 
-__global__ void mat_pad_fill(Mat dst, Mat m, float p_num, size_t p_size);
+__global__ void mat_pad_fill(Mat dst, float p_num, size_t p_size);
 __global__ void mat_pad_inject(Mat dst, Mat m, size_t p_size);
 void mat_pad(Mat dst, Mat m, float p_num, size_t p_size);
 
@@ -85,11 +84,13 @@ __global__ void mat_sgd_helper_kernel(Mat dst, Mat m, float s);
 MAT_HOST_DEVICE void mat_sgd_helper(Mat dst, Mat m, float s);
 __global__ void mat_momentum_helper_kernel(Mat dst, Mat m, Mat v, float rate);
 MAT_HOST_DEVICE void mat_momentum_helper(Mat dst, Mat m, Mat v, float rate);
-__global__ void mat_adam_helper_kernel(Mat dst, Mat m, Mat m1, Mat m2, size_t t, float rate);
+__global__ void mat_adam_helper_kernel(Mat dst, Mat m, Mat m1, Mat m2, float c1, float c2, size_t t, float rate);
 MAT_HOST_DEVICE void mat_adam_helper(Mat dst, Mat m, Mat m1, Mat m2, size_t t, float rate);
 
 __global__ void mat_pool_max_kernel(Mat dst, Mat m, size_t fx, size_t fy, size_t sx, size_t sy);
 MAT_HOST_DEVICE void mat_pool_max(Mat dst, Mat m, const size_t* p);
+__global__ void mat_pool_average_kernel(Mat dst, Mat m, size_t fx, size_t fy, size_t sx, size_t sy);
+MAT_HOST_DEVICE void mat_pool_average(Mat dst, Mat m, const size_t* p);
 
 __global__ void mat_sum_bias_kernel(Mat dst, Mat m);
 MAT_HOST_DEVICE void mat_sum_bias(Mat dst, Mat m);
@@ -440,7 +441,7 @@ MAT_HOST_DEVICE void mat_momentum_helper(Mat dst, Mat m, Mat v, float rate) {
     CUDA_CHECK(cudaGetLastError());
 }
 
-__global__ void mat_adam_helper_kernel(Mat dst, Mat m, Mat m1, Mat m2, size_t t, float rate) {
+__global__ void mat_adam_helper_kernel(Mat dst, Mat m, Mat m1, Mat m2, float c1, float c2, size_t t, float rate) {
     size_t i{(size_t) blockIdx.y * blockDim.y + threadIdx.y};
     size_t j{(size_t) blockIdx.x * blockDim.x + threadIdx.x};
 
@@ -450,8 +451,7 @@ __global__ void mat_adam_helper_kernel(Mat dst, Mat m, Mat m1, Mat m2, size_t t,
         float b{0.999f * MAT_AT(m2, i, j) + 0.001f * g * g};
         MAT_AT(m1, i, j) = a;
         MAT_AT(m2, i, j) = b;
-
-        MAT_AT(dst, i, j) -= rate * (a / (1.f - powf(0.9f, t))) / (sqrtf(b / (1.f - powf(0.999f, t))) + 1e-8f);
+        MAT_AT(dst, i, j) -= rate * (a / c1) / (sqrtf(b / c2) + 1e-8f);
     }
 }
 
@@ -461,10 +461,13 @@ MAT_HOST_DEVICE void mat_adam_helper(Mat dst, Mat m, Mat m1, Mat m2, size_t t, f
     GNN_ASSERT(dst.rows == m1.rows && dst.cols == m1.cols);
     GNN_ASSERT(dst.rows == m2.rows && dst.cols == m2.cols);
 
+    float c1{1.0f - powf(0.9f, t)};
+    float c2{1.0f - powf(0.999f, t)};
+
     dim3 threads{32, 8};
     dim3 blocks{(unsigned int) ((dst.cols + threads.x - 1) / threads.x),
                 (unsigned int) ((dst.rows + threads.y - 1) / threads.y)};
-    mat_adam_helper_kernel<<<blocks, threads>>>(dst, m, m1, m2, t, rate);
+    mat_adam_helper_kernel<<<blocks, threads>>>(dst, m, m1, m2, c1, c2, t, rate);
     CUDA_CHECK(cudaGetLastError());
 }
 
@@ -842,7 +845,7 @@ void mat_print(Mat m, const char *name) {
     printf("%s\n", name);
     for (size_t i{}; i < m.rows; ++i) {
         for (size_t j{}; j < m.cols; ++j)
-            printf("    %f ", VEC_AT(host_es, i, j));
+            printf("    %f ", host_es[i * m.stride + j]);
         printf("\n");
     }
     printf("\n");
