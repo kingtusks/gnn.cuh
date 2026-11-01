@@ -1,16 +1,6 @@
-#pragma once
-
+#include "mnist.h"
 #include <cstdio>
 #include <fstream>
-#include <vector>
-
-#define MNIST_IMG_SIZE 784
-#define MNIST_N_CLASSES 10
-#define MNIST_STRIDE (MNIST_IMG_SIZE + MNIST_N_CLASSES)
-
-inline std::vector<float> mnist_load_td(const char* images_path, const char* labels_path, size_t n);
-
-#ifdef MNIST_IMPLEMENTATION
 
 inline std::vector<float> mnist_load_td(const char* images_path, const char* labels_path, size_t n) {
     std::ifstream images_file(images_path, std::ios::binary);
@@ -38,5 +28,3 @@ inline std::vector<float> mnist_load_td(const char* images_path, const char* lab
     }
     return td;
 }
-
-#endif //MNIST_IMPLEMENTATION

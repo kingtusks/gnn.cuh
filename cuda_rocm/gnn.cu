@@ -62,7 +62,12 @@ void mnist_nn() {
     nn_free(nn);
 }
 
+//1 for 10, 2 for 100
+void cifar_x(int lb) {
+
+}
+
 int main() {
-    mnist_nn();
+
     return 0;
 }
