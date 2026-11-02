@@ -1,6 +1,4 @@
-#define GNN_IMPLEMENTATION
 #include "gnn.cuh"
-#define MNIST_IMPLEMENTATION
 #include "../datasets/mnist/mnist.h"
 
 float xor_td[] = {
@@ -63,11 +61,8 @@ void mnist_nn() {
 }
 
 //1 for 10, 2 for 100
-void cifar_x(int lb) {
-
-}
+void cifar_x(int lb) {}
 
 int main() {
-
     return 0;
 }
