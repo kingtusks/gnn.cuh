@@ -110,6 +110,5 @@ void mnist_nn() {
 void cifar_x(int lb) {}
 
 int main() {
-    mnist_nn();
     return 0;
 }

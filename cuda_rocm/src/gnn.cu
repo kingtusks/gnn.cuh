@@ -348,4 +348,58 @@ namespace NeuralNetwork {
         }
         printf("\n");
     }
+
+    void nn_finite_diff_nudge(NN nn, Matrix::Mat m, Matrix::Mat gm, Matrix::Mat ti, Matrix::Mat to, float eps, float c) {
+        for (size_t j{}; j < m.rows; ++j) {
+            for (size_t k{}; k < m.cols; ++k) {
+                float* p{&MAT_AT(m, j, k)};
+                float saved, nudged, grad;
+
+                GNN_CUDA_CHECK(cudaMemcpy(&saved, p, sizeof(float), cudaMemcpyDeviceToHost));
+                nudged = saved + eps;
+                GNN_CUDA_CHECK(cudaMemcpy(p, &nudged, sizeof(float), cudaMemcpyHostToDevice));
+
+                grad = (nn_cost(nn, ti, to) - c) / eps;
+
+                GNN_CUDA_CHECK(cudaMemcpy(p, &saved, sizeof(float), cudaMemcpyHostToDevice));
+                GNN_CUDA_CHECK(cudaMemcpy(&MAT_AT(gm, j, k), &grad, sizeof(float), cudaMemcpyHostToDevice));
+            }
+        }
+    }
+
+    void nn_write_u64(FILE* f, uint64_t n) {
+        size_t ok{fwrite(&n, sizeof(n), 1, f)};
+        GNN_ASSERT(ok == 1);
+        (void) ok;
+    }
+
+    uint64_t nn_read_u64(FILE* f) {
+        uint64_t v{};
+        size_t ok{fread(&v, sizeof(v), 1, f)};
+        GNN_ASSERT(ok == 1);
+        (void) ok;
+        return v;
+    }
+
+    void nn_mat_write(FILE* f, Matrix::Mat m) {
+        size_t n{m.rows * m.cols};
+        float* h{(float*) malloc(n * sizeof(float))};
+        GNN_ASSERT(h);
+        GNN_CUDA_CHECK(cudaMemcpy(h, m.es, n * sizeof(float), cudaMemcpyDeviceToHost));
+        size_t ok{fwrite(h, sizeof(float), n, f)};
+        GNN_ASSERT(ok == n);
+        (void) ok;
+        free(h);
+    }
+
+    void nn_mat_read(FILE* f, Matrix::Mat m) {
+        size_t n{m.rows * m.cols};
+        float* h{(float*) malloc(n * sizeof(float))};
+        GNN_ASSERT(h);
+        size_t ok{fread(h, sizeof(float), n, f)};
+        GNN_ASSERT(ok == n);
+        (void) ok;
+        GNN_CUDA_CHECK(cudaMemcpy(m.es, h, n * sizeof(float), cudaMemcpyHostToDevice));
+        free(h);
+    }
 }
