@@ -114,8 +114,7 @@ namespace Matrix {
         CUDA_CHECK(cudaGetLastError());
     }
 
-    static uint64_t mat_rand_seed = MAT_RAND_SEED;
-
+    static uint64_t mat_rand_seed{MAT_RAND_SEED};
     void mat_set_seed(uint64_t seed) {mat_rand_seed = seed;}
 
     __global__ void mat_rand_contiguous_kernel(float* p, float low, float high, size_t area, uint64_t seed) {

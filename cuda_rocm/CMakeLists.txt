@@ -14,6 +14,8 @@ add_executable(gnn
     src/gnn.cu
     src/gnn.cuh
     src/main.cu
+    ../datasets/mnist/mnist.cpp
+    ../datasets/mnist/mnist.h
 )
 
 set_target_properties(gnn PROPERTIES CUDA_SEPARABLE_COMPILATION ON)

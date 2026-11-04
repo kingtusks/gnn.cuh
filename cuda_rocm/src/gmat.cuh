@@ -19,6 +19,7 @@ namespace Matrix {
 #define MAT_AT(m, i, j) (m).es[(i)*(m).stride + (j)]
 #define MAT_PRINT(m) mat_print(m, #m)
 #define CUDA_CHECK(call) cuda_check(call, __FILE__, __LINE__)
+#define GNN_CUDA_CHECK(call) Matrix::cuda_check(call, __FILE__, __LINE__)
     inline constexpr unsigned int TILE{32};
     inline constexpr uint64_t MAT_RAND_SEED{16122008};
     struct Mat {
