@@ -13,7 +13,7 @@
 namespace gnn {
     void cuda_check(cudaError_t err, const char* file, int line);
     #define CUDA_CHECK(call) ::gnn::cuda_check(call, __FILE__, __LINE__)
-    #define TENSOR_PRINT(t) (t).tensor_print(#t)
+    #define TENSOR_PRINT(t) (t).print(#t)
 
     inline constexpr unsigned int tile {32};
     inline constexpr uint64_t tensor_rand_seed {0x16122008ULL};
@@ -27,9 +27,9 @@ namespace gnn {
         Tensor(size_t rows, size_t cols, size_t depth);
         Tensor(size_t rows, size_t cols, size_t depth, size_t stride, size_t dstride, const float *h_es);
 
-        // lil suggestion to maybe make namespaces for 2d and 3d+ tensors (later tho)
-        void tensor_fill(float n);
-        void tensor_print(const char *name) const;
+        void pad(Tensor dst, float p_num, size_t p_size);
+        void fill(float n);
+        void print(const char *name) const;
 
         __host__ __device__ float& at(size_t i, size_t j, size_t k) const
         {
