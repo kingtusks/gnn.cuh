@@ -10,16 +10,13 @@
 #define GNN_ASSERT assert
 #endif //GNN_ASSERT
 
-#define CUDA_CHECK(call) gnn::cuda_check(call, __FILE__, __LINE__)
-
 namespace gnn {
+    void cuda_check(cudaError_t err, const char* file, int line);
+    #define CUDA_CHECK(call) ::gnn::cuda_check(call, __FILE__, __LINE__)
+    #define TENSOR_PRINT(t) (t).tensor_print(#t)
+
     inline constexpr unsigned int tile {32};
     inline constexpr uint64_t tensor_rand_seed {0x16122008ULL};
-
-    namespace kernels {
-        __global__ void tensor_fill_contiguous(float n, size_t area);
-        __global__ void tensor_fill_noncontiguous(float n);
-    }
 
     struct Tensor {
         unsigned int rows, cols, stride;
@@ -32,11 +29,13 @@ namespace gnn {
 
         // lil suggestion to maybe make namespaces for 2d and 3d+ tensors (later tho)
         void tensor_fill(float n);
+        void tensor_print(const char *name) const;
 
-        private:
-            void tensor_fill_contiguous(float n)
-            void tensor_fill_noncontiguous(float n);
+        __host__ __device__ float& at(size_t i, size_t j, size_t k) const
+        {
+            return es[k * dstride + i * stride + j];
+        }
+
+        //private:
     };
-
-    void cuda_check(cudaError_t err, const char* file, int line);
 }
