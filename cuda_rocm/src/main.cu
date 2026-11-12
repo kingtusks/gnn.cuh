@@ -5,7 +5,7 @@ int main() {
     gnn::Tensor t {3, 4, 2};
     gnn::Tensor dst {t.rows + 2 * p_size, t.cols + 2 * p_size, 2};
 
-    t.fill(3.0f);
+    t.rand(1, 10);
     TENSOR_PRINT(t);
 
     t.pad(dst, 1.0f, p_size);

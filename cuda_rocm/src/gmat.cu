@@ -2,9 +2,24 @@
 
 namespace gnn
 {
+    // non-Tensor functions
+    void cuda_check(cudaError_t err, const char* file, int line)
+    {
+        if (err != cudaSuccess)
+        {
+            printf("%s:%d CUDA Error: %s\n", file, line, cudaGetErrorString(err));
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    void set_seed(std::uint64_t seed)
+    {
+        tensor_rand_seed = seed;
+    }
+
     namespace kernels
     {
-        __global__ void tensor_fill(Tensor t, float n)
+        __global__ void fill(Tensor t, float n)
         {
             size_t i {(size_t) blockIdx.y * blockDim.y + threadIdx.y};
             size_t j {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
@@ -16,19 +31,19 @@ namespace gnn
             }
         }
 
-        __global__ void tensor_pad_inject(Tensor dst, const Tensor m, size_t p_size)
+        __global__ void pad_inject(Tensor dst, const Tensor t, size_t p_size)
         {
             size_t i {(size_t) blockIdx.y * blockDim.y + threadIdx.y};
             size_t j {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
             size_t k {(size_t) blockIdx.z};
 
-            if (i < m.rows && j < m.cols && k < m.depth)
+            if (i < t.rows && j < t.cols && k < t.depth)
             {
-                dst.at(i + p_size, j + p_size, k) = m.at(i, j, k);
+                dst.at(i + p_size, j + p_size, k) = t.at(i, j, k);
             }
         }
 
-        __global__ void tensor_pad_fill(Tensor dst, float p_num, size_t p_size)
+        __global__ void pad_fill(Tensor dst, float p_num, size_t p_size)
         {
             size_t i {(size_t) blockIdx.y * blockDim.y + threadIdx.y};
             size_t j {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
@@ -37,6 +52,19 @@ namespace gnn
             if (i < dst.rows && j < dst.cols && dst.depth)
                 if (i < p_size || j < p_size || (i >= dst.rows - p_size && i < dst.rows) || (j >= dst.cols - p_size && j < dst.cols))
                     dst.at(i, j, k) = p_num;
+        }
+
+        __global__ void rand(Tensor t, float low, float high, std::uint64_t seed)
+        {
+            size_t i {(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+            size_t j {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            size_t k {(size_t) blockIdx.z};
+
+            if (i < t.rows && j < t.cols && k < t.depth)
+            {
+                std::uint64_t true_i {k * t.dstride + i * t.stride + j};
+                t.at(i, j, k) = rand_float(seed, true_i) * (high - low) + low;
+            }
         }
     } // namespace kernels
 
@@ -76,7 +104,7 @@ namespace gnn
             (rows + threads.y - 1) / threads.y,
             depth
         };
-        kernels::tensor_pad_inject<<<i_blocks, threads>>>(dst, *this, p_size);
+        kernels::pad_inject<<<i_blocks, threads>>>(dst, *this, p_size);
         CUDA_CHECK(cudaGetLastError());
 
         dim3 f_blocks
@@ -85,7 +113,7 @@ namespace gnn
             (dst.rows + threads.y - 1) / threads.y,
             dst.depth
         };
-        kernels::tensor_pad_fill<<<f_blocks, threads>>>(dst, p_num, p_size);
+        kernels::pad_fill<<<f_blocks, threads>>>(dst, p_num, p_size);
         CUDA_CHECK(cudaGetLastError());
     }
 
@@ -99,7 +127,21 @@ namespace gnn
             depth
         };
 
-        kernels::tensor_fill<<<blocks, threads>>>(*this, n);
+        kernels::fill<<<blocks, threads>>>(*this, n);
+        CUDA_CHECK(cudaGetLastError());
+    }
+
+    void Tensor::rand(float low, float high)
+    {
+        std::uint64_t seed {++tensor_rand_seed};
+        dim3 threads {32, 8};
+        dim3 blocks
+        {
+            (cols + threads.x - 1) / threads.x,
+            (rows + threads.y - 1) / threads.y,
+            depth
+        };
+        kernels::rand<<<blocks, threads>>>(*this, low, high, seed);
         CUDA_CHECK(cudaGetLastError());
     }
 
@@ -120,15 +162,5 @@ namespace gnn
         }
         printf("\n");
         free(h_es);
-    }
-
-    // non-Tensor functions
-    void cuda_check(cudaError_t err, const char* file, int line)
-    {
-        if (err != cudaSuccess)
-        {
-            printf("%s:%d CUDA Error: %s\n", file, line, cudaGetErrorString(err));
-            exit(EXIT_FAILURE);
-        }
     }
 } // namespace gnn
