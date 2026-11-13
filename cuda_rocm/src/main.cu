@@ -1,19 +1,19 @@
 #include "gmat.cuh"
 
 int main() {
-    size_t p_size {2};
     gnn::Tensor t {3, 4, 2};
-    gnn::Tensor dst {t.rows + 2 * p_size, t.cols + 2 * p_size, 2};
+    gnn::Tensor g {t.clone()};
+    float s {0.2f};
 
-    t.rand(1, 10);
-    TENSOR_PRINT(t);
+    t.fill(1.0f);
+    g.fill(2.0f);
 
-    t.pad(dst, 1.0f, p_size);
     TENSOR_PRINT(t);
-    TENSOR_PRINT(dst);
+    t.sgd(g, s);
+    TENSOR_PRINT(t);
 
     // destructor wont work for individual matrices (bc of the kernels)
-    CUDA_CHECK(cudaFree(t.es));
-    CUDA_CHECK(cudaFree(dst.es));
+    CUDA_CHECK(cudaFree(t.es_));
+    CUDA_CHECK(cudaFree(g.es_));
     return 0;
 }

@@ -42,6 +42,7 @@ namespace gnn {
         Tensor(size_t rows, size_t cols, size_t depth);
         Tensor(size_t rows, size_t cols, size_t depth, size_t stride, size_t dstride, const float *h_es);
 
+        Tensor clone() const;
         void pad(Tensor dst, float p_num, size_t p_size);
         void fill(float n);
         void rand(float low, float high);
@@ -49,6 +50,7 @@ namespace gnn {
         Tensor mats(size_t depth, size_t n);
         Tensor row(size_t depth, size_t row);
         Tensor rows(size_t depth, size_t row, size_t n);
+        void sgd(const Tensor g, float s);
         void print(const char *name) const;
 
         __host__ __device__ float& at(size_t i, size_t j, size_t k) const

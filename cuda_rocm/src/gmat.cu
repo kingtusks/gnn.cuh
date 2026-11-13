@@ -26,9 +26,7 @@ namespace gnn
             size_t k {(size_t) blockIdx.z};
 
             if (i < t.rows_ && j < t.cols_ && k < t.depth_)
-            {
                 t.at(i, j, k) = n;
-            }
         }
 
         __global__ void pad_inject(Tensor dst, const Tensor t, size_t p_size)
@@ -38,9 +36,7 @@ namespace gnn
             size_t k {(size_t) blockIdx.z};
 
             if (i < t.rows_ && j < t.cols_ && k < t.depth_)
-            {
                 dst.at(i + p_size, j + p_size, k) = t.at(i, j, k);
-            }
         }
 
         __global__ void pad_fill(Tensor dst, float p_num, size_t p_size)
@@ -62,9 +58,19 @@ namespace gnn
 
             if (i < t.rows_ && j < t.cols_ && k < t.depth_)
             {
-                std::uint64_t true_i {k * t.dstride + i * t.stride + j};
+                std::uint64_t true_i {k * t.dstride_ + i * t.stride_ + j};
                 t.at(i, j, k) = rand_float(seed, true_i) * (high - low) + low;
             }
+        }
+
+        __global__ void sgd(Tensor t, const Tensor g, float s)
+        {
+            size_t i {(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+            size_t j {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            size_t k {(size_t) blockIdx.z};
+
+            if (i < t.rows_ && j < t.cols_ && k < t.depth_)
+                t.at(i, j, k) -= s * g.at(i, j, k);
         }
     } // namespace kernels
 
@@ -79,11 +85,11 @@ namespace gnn
     Tensor::Tensor(size_t rows, size_t cols, size_t depth, size_t stride, size_t dstride, const float *h_es) :
         Tensor(rows, cols, depth)
     {
-        for (size_t d {}; d < depth; ++d)
+        for (size_t i {}; i < depth; ++i)
         {
             CUDA_CHECK(cudaMemcpy2D(
-                es + d * dstride_, stride_ * sizeof(float),
-                h_es + d * dstride, stride * sizeof(float),
+                es_ + i * dstride_, stride_ * sizeof(float),
+                h_es + i * dstride, stride * sizeof(float),
                 cols * sizeof(float),
                 rows, cudaMemcpyHostToDevice
             ));
@@ -91,6 +97,21 @@ namespace gnn
     }
 
     // public impl
+
+    Tensor Tensor::clone() const
+    {
+        Tensor t(rows_, cols_, depth_);
+        for (size_t i {}; i < depth_; ++i)
+        {
+            CUDA_CHECK(cudaMemcpy2D(
+                t.es_ + i * t.dstride_, t.stride_ * sizeof(float),
+                es_ + i * dstride_, stride_ * sizeof(float),
+                cols_ * sizeof(float),
+                rows_, cudaMemcpyDeviceToDevice
+            ));
+        }
+        return t;
+    }
 
     void Tensor::pad(Tensor dst, float p_num, size_t p_size)
     {
@@ -159,7 +180,7 @@ namespace gnn
         t.depth_ = n;
         t.stride_ = stride_;
         t.dstride_ = dstride_;
-        t.es = &at(0, 0, depth);
+        t.es_ = &at(0, 0, depth);
         return t;
     }
 
@@ -176,15 +197,31 @@ namespace gnn
         t.depth_ = 1;
         t.stride_ = stride_;
         t.dstride_ = dstride_;
-        t.es = &at(row, 0, depth);
+        t.es_ = &at(row, 0, depth);
         return t;
+    }
+
+    void Tensor::sgd(const Tensor g, float s)
+    {
+        GNN_ASSERT(rows_ == g.rows_);
+        GNN_ASSERT(cols_ == g.cols_);
+
+        dim3 threads {32, 8};
+        dim3 blocks
+        {
+            (cols_ + threads.x - 1) / threads.x,
+            (rows_ + threads.x - 1) / threads.x,
+            depth_
+        };
+        kernels::sgd<<<blocks, threads>>>(*this, g, s);
+        CUDA_CHECK(cudaGetLastError());
     }
 
     void Tensor::print(const char* name) const
     {
         size_t count {(size_t) (depth_ - 1) * dstride_ + (size_t) rows_ * stride_};
         float* h_es {(float*) malloc(count * sizeof(float))};
-        CUDA_CHECK(cudaMemcpy(h_es, es, count * sizeof(float), cudaMemcpyDeviceToHost));
+        CUDA_CHECK(cudaMemcpy(h_es, es_, count * sizeof(float), cudaMemcpyDeviceToHost));
 
         printf("%s (%u x %u x %u)\n", name, rows_, cols_, depth_);
         for (size_t d {}; d < depth_; ++d) {
