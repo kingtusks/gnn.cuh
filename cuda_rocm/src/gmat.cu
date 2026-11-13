@@ -63,14 +63,27 @@ namespace gnn
             }
         }
 
-        __global__ void sgd(Tensor t, const Tensor g, float s)
+        __global__ void sgd(Tensor t, const Tensor g, float rate)
         {
             size_t i {(size_t) blockIdx.y * blockDim.y + threadIdx.y};
             size_t j {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
             size_t k {(size_t) blockIdx.z};
 
             if (i < t.rows_ && j < t.cols_ && k < t.depth_)
-                t.at(i, j, k) -= s * g.at(i, j, k);
+                t.at(i, j, k) -= rate * g.at(i, j, k);
+        }
+
+        __global__ void momentum(Tensor t, const Tensor g, Tensor v, float rate)
+        {
+            size_t i {(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+            size_t j {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            size_t k {(size_t) blockIdx.z};
+
+            if (i < t.rows_ && j < t.cols_ && k < t.depth_)
+            {
+                v.at(i, j, k) = 0.9f * v.at(i, j, k) + g.at(i, j, k);
+                t.at(i, j, k) -= rate * v.at(i, j, k);
+            }
         }
     } // namespace kernels
 
@@ -201,7 +214,7 @@ namespace gnn
         return t;
     }
 
-    void Tensor::sgd(const Tensor g, float s)
+    void Tensor::sgd(const Tensor g, float rate)
     {
         GNN_ASSERT(rows_ == g.rows_);
         GNN_ASSERT(cols_ == g.cols_);
@@ -213,7 +226,25 @@ namespace gnn
             (rows_ + threads.x - 1) / threads.x,
             depth_
         };
-        kernels::sgd<<<blocks, threads>>>(*this, g, s);
+        kernels::sgd<<<blocks, threads>>>(*this, g, rate);
+        CUDA_CHECK(cudaGetLastError());
+    }
+
+    void Tensor::momentum(const Tensor g, Tensor v, float rate)
+    {
+        GNN_ASSERT(rows_ == g.rows_);
+        GNN_ASSERT(cols_ == g.cols_);
+        GNN_ASSERT(rows_ == v.rows_);
+        GNN_ASSERT(cols_ == v.cols_);
+
+        dim3 threads {32, 8};
+        dim3 blocks
+        {
+            (cols_ + threads.x - 1) / threads.x,
+            (rows_ + threads.x - 1) / threads.x,
+            depth_
+        };
+        kernels::momentum<<<blocks, threads>>>(*this, g, v, rate);
         CUDA_CHECK(cudaGetLastError());
     }
 

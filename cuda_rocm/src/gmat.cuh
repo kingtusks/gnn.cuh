@@ -50,7 +50,8 @@ namespace gnn {
         Tensor mats(size_t depth, size_t n);
         Tensor row(size_t depth, size_t row);
         Tensor rows(size_t depth, size_t row, size_t n);
-        void sgd(const Tensor g, float s);
+        void sgd(const Tensor g, float rate);
+        void momentum(const Tensor g, Tensor v, float rate);
         void print(const char *name) const;
 
         __host__ __device__ float& at(size_t i, size_t j, size_t k) const
