@@ -45,6 +45,10 @@ namespace gnn {
         void pad(Tensor dst, float p_num, size_t p_size);
         void fill(float n);
         void rand(float low, float high);
+        Tensor mat(Tensor t, size_t depth);
+        Tensor mats(Tensor t, size_t depth, size_t n);
+        Tensor row(Tensor t, size_t depth, size_t row);
+        Tensor rows(Tensor t, size_t depth, size_t row, size_t n);
         void print(const char *name) const;
 
         __host__ __device__ float& at(size_t i, size_t j, size_t k) const

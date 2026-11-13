@@ -145,6 +145,26 @@ namespace gnn
         CUDA_CHECK(cudaGetLastError());
     }
 
+    Tensor mat(Tensor t, size_t depth)
+    {
+
+    }
+
+    Tensor mats(Tensor t, size_t depth, size_t n)
+    {
+
+    }
+
+    Tensor row(Tensor t, size_t depth, size_t row)
+    {
+
+    }
+
+    Tensor rows(Tensor t, size_t depth, size_t row, size_t n)
+    {
+
+    }
+
     void Tensor::print(const char *name) const
     {
         size_t count {(size_t) (depth - 1) * dstride + (size_t) rows * stride};
