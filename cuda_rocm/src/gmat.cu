@@ -123,6 +123,26 @@ namespace gnn
                 dst.at(i, j, k) = best;
             }
         }
+
+        __global__ void avg_pool(Tensor dst, const Tensor t,
+                size_t feature_x, size_t feature_y, size_t stride_x, size_t stride_y)
+        {
+            size_t i {(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+            size_t j {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            size_t k {(size_t) blockIdx.z};
+
+            if (i < dst.rows_ && j < dst.cols_ && k < dst.depth_)
+            {
+                size_t r0 {stride_y * i};
+                size_t c0 {stride_x * j};
+
+                float s {};
+                for (size_t y {}; y < feature_y; ++y)
+                    for (size_t x {}; x < feature_x; ++x)
+                        s += t.at(r0 + y, c0 + x, k);
+                dst.at(i, j, k) = s / (feature_x * feature_y);
+            }
+        }
     } // namespace kernels
 
     // constructors
@@ -326,6 +346,29 @@ namespace gnn
             dst.depth_
         };
         kernels::max_pool<<<blocks, threads>>>(dst, *this,
+                feature_x, feature_y, stride_x, stride_y);
+        CUDA_CHECK(cudaGetLastError());
+    }
+
+    void Tensor::avg_pool(Tensor dst, const size_t* sf) const
+    {
+        size_t stride_x {sf[0]}, stride_y {sf[1]};
+        size_t feature_x {sf[2]}, feature_y {sf[3]};
+
+        GNN_ASSERT(stride_x > 0 && stride_y > 0 && feature_x > 0 && feature_y > 0);
+        GNN_ASSERT(rows_ >= feature_y && cols_ >= feature_x);
+        GNN_ASSERT(dst.depth_ == depth_);
+        GNN_ASSERT(dst.rows_ == (rows_ - feature_y) / stride_y + 1);
+        GNN_ASSERT(dst.cols_ == (cols_ - feature_x) / stride_x + 1);
+
+        dim3 threads {32, 8};
+        dim3 blocks
+        {
+            (unsigned int) (dst.cols_ + threads.x - 1) / threads.x,
+            (unsigned int) (dst.rows_ + threads.y - 1) / threads.y,
+            dst.depth_
+        };
+        kernels::avg_pool<<<blocks, threads>>>(dst, *this,
                 feature_x, feature_y, stride_x, stride_y);
         CUDA_CHECK(cudaGetLastError());
     }
