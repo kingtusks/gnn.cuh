@@ -85,6 +85,24 @@ namespace gnn
                 t.at(i, j, k) -= rate * v.at(i, j, k);
             }
         }
+
+        __global__ void adam(Tensor t, const Tensor g, Tensor m1, Tensor m2,
+                float c1, float c2, size_t t, float rate)
+        {
+            size_t i {(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+            size_t j {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            size_t k {(size_t) blockIdx.z};
+
+            if (i < t.rows_ && j < t.cols_ && k < t.depth_)
+            {
+                float g {g.at(i, j, k)};
+                float a {0.9f * m1.at(i, j, k) + 0.1f * g};
+                float b {0.999f * m2.at(i, j, k) + 0.001f * g * g};
+                m1.at(i, j, k) = a;
+                m2.at(i, j, k) = b;
+                t.at(i, j, k) -= rate * (a / c1) / (sqrtf(b / c2) + 1e-8f);
+            }
+        }
     } // namespace kernels
 
     // constructors
@@ -135,8 +153,8 @@ namespace gnn
         dim3 threads {32, 8};
         dim3 i_blocks
         {
-            (cols_ + threads.x - 1) / threads.x,
-            (rows_ + threads.y - 1) / threads.y,
+            (unsigned int) (cols_ + threads.x - 1) / threads.x,
+            (unsigned int) (rows_ + threads.y - 1) / threads.y,
             depth_
         };
         kernels::pad_inject<<<i_blocks, threads>>>(dst, *this, p_size);
@@ -144,8 +162,8 @@ namespace gnn
 
         dim3 f_blocks
         {
-            (dst.cols_ + threads.x - 1) / threads.x,
-            (dst.rows_ + threads.y - 1) / threads.y,
+            (unsigned int) (dst.cols_ + threads.x - 1) / threads.x,
+            (unsigned int) (dst.rows_ + threads.y - 1) / threads.y,
             dst.depth_
         };
         kernels::pad_fill<<<f_blocks, threads>>>(dst, p_num, p_size);
@@ -157,8 +175,8 @@ namespace gnn
         dim3 threads {32, 8};
         dim3 blocks
         {
-            (cols_ + threads.x - 1) / threads.x,
-            (rows_ + threads.y - 1) / threads.y,
+            (unsigned int) (cols_ + threads.x - 1) / threads.x,
+            (unsigned int) (rows_ + threads.y - 1) / threads.y,
             depth_
         };
 
@@ -172,8 +190,8 @@ namespace gnn
         dim3 threads {32, 8};
         dim3 blocks
         {
-            (cols_ + threads.x - 1) / threads.x,
-            (rows_ + threads.y - 1) / threads.y,
+            (unsigned int) (cols_ + threads.x - 1) / threads.x,
+            (unsigned int) (rows_ + threads.y - 1) / threads.y,
             depth_
         };
         kernels::rand<<<blocks, threads>>>(*this, low, high, seed);
@@ -222,8 +240,8 @@ namespace gnn
         dim3 threads {32, 8};
         dim3 blocks
         {
-            (cols_ + threads.x - 1) / threads.x,
-            (rows_ + threads.x - 1) / threads.x,
+            (unsigned int) (cols_ + threads.x - 1) / threads.x,
+            (unsigned int) (rows_ + threads.x - 1) / threads.x,
             depth_
         };
         kernels::sgd<<<blocks, threads>>>(*this, g, rate);
@@ -240,11 +258,32 @@ namespace gnn
         dim3 threads {32, 8};
         dim3 blocks
         {
-            (cols_ + threads.x - 1) / threads.x,
-            (rows_ + threads.x - 1) / threads.x,
+            (unsigned int) (cols_ + threads.x - 1) / threads.x,
+            (unsigned int) (rows_ + threads.x - 1) / threads.x,
             depth_
         };
         kernels::momentum<<<blocks, threads>>>(*this, g, v, rate);
+        CUDA_CHECK(cudaGetLastError());
+    }
+
+    void Tensor::adam(const Tensor g, Tensor m1, Tensor m2, size_t t, float rate)
+    {
+        GNN_ASSERT(t > 0);
+        GNN_ASSERT(rows_ == g.rows && cols_ == g.cols);
+        GNN_ASSERT(rows_ == m1.rows && cols_ == m1.cols);
+        GNN_ASSERT(rows_ == m2.rows && cols_ == m2.cols);
+
+        float c1 {1.0f - powf(0.9f, t)};
+        float c1 {1.0f - powf(0.999f, t)};
+
+        dim3 threads {32, 8};
+        dim3 blocks
+        {
+            (unsigned int) (cols_ + threads.x - 1) / threads.x,
+            (unsigned int) (rows_ + threads.y - 1) / threads.y,
+            depth_
+        };
+        kernels::adam<<<blocks, threads>>>(*this, g, m1, m2, c1, c2, t, rate);
         CUDA_CHECK(cudaGetLastError());
     }
 
