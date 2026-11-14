@@ -86,8 +86,8 @@ namespace gnn
             }
         }
 
-        __global__ void adam(Tensor t, const Tensor g, Tensor m1, Tensor m2,
-                float c1, float c2, size_t t, float rate)
+        __global__ void adam(Tensor t, const Tensor g, Tensor m1, Tensor m2, 
+                float c1, float c2, float rate)
         {
             size_t i {(size_t) blockIdx.y * blockDim.y + threadIdx.y};
             size_t j {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
@@ -95,12 +95,32 @@ namespace gnn
 
             if (i < t.rows_ && j < t.cols_ && k < t.depth_)
             {
-                float g {g.at(i, j, k)};
-                float a {0.9f * m1.at(i, j, k) + 0.1f * g};
-                float b {0.999f * m2.at(i, j, k) + 0.001f * g * g};
+                float grad {g.at(i, j, k)};
+                float a {0.9f * m1.at(i, j, k) + 0.1f * grad};
+                float b {0.999f * m2.at(i, j, k) + 0.001f * grad * grad};
                 m1.at(i, j, k) = a;
                 m2.at(i, j, k) = b;
                 t.at(i, j, k) -= rate * (a / c1) / (sqrtf(b / c2) + 1e-8f);
+            }
+        }
+
+        __global__ void max_pool(Tensor dst, const Tensor t,
+                size_t feature_x, size_t feature_y, size_t stride_x, size_t stride_y)
+        {
+            size_t i {(size_t) blockIdx.y * blockDim.y + threadIdx.y};
+            size_t j {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            size_t k {(size_t) blockIdx.z};
+
+            if (i < dst.rows_ && j < dst.cols_ && k < dst.depth_)
+            {
+                size_t r0 {stride_y * i};
+                size_t c0 {stride_x * j};
+
+                float best {t.at(r0, c0, k)};
+                for (size_t y {}; y < feature_y; ++y)
+                    for (size_t x {}; x < feature_x; ++x)
+                        best = fmaxf(best, t.at(r0 + y, c0 + x, k));
+                dst.at(i, j, k) = best;
             }
         }
     } // namespace kernels
@@ -269,12 +289,12 @@ namespace gnn
     void Tensor::adam(const Tensor g, Tensor m1, Tensor m2, size_t t, float rate)
     {
         GNN_ASSERT(t > 0);
-        GNN_ASSERT(rows_ == g.rows && cols_ == g.cols);
-        GNN_ASSERT(rows_ == m1.rows && cols_ == m1.cols);
-        GNN_ASSERT(rows_ == m2.rows && cols_ == m2.cols);
+        GNN_ASSERT(rows_ == g.rows_ && cols_ == g.cols_);
+        GNN_ASSERT(rows_ == m1.rows_ && cols_ == m1.cols_);
+        GNN_ASSERT(rows_ == m2.rows_ && cols_ == m2.cols_);
 
-        float c1 {1.0f - powf(0.9f, t)};
-        float c1 {1.0f - powf(0.999f, t)};
+        float c1 {1.0f - powf(0.9f, (float) t)};
+        float c2 {1.0f - powf(0.999f, (float) t)};
 
         dim3 threads {32, 8};
         dim3 blocks
@@ -283,7 +303,30 @@ namespace gnn
             (unsigned int) (rows_ + threads.y - 1) / threads.y,
             depth_
         };
-        kernels::adam<<<blocks, threads>>>(*this, g, m1, m2, c1, c2, t, rate);
+        kernels::adam<<<blocks, threads>>>(*this, g, m1, m2, c1, c2, rate);
+        CUDA_CHECK(cudaGetLastError());
+    }
+
+    void Tensor::max_pool(Tensor dst, const size_t* sf) const
+    {
+        size_t stride_x {sf[0]}, stride_y {sf[1]};
+        size_t feature_x {sf[2]}, feature_y {sf[3]};
+
+        GNN_ASSERT(stride_x > 0 && stride_y > 0 && feature_x > 0 && feature_y > 0);
+        GNN_ASSERT(rows_ >= feature_y && cols_ >= feature_x);
+        GNN_ASSERT(dst.depth_ == depth_);
+        GNN_ASSERT(dst.rows_ == (rows_ - feature_y) / stride_y + 1);
+        GNN_ASSERT(dst.cols_ == (cols_ - feature_x) / stride_x + 1);
+
+        dim3 threads {32, 8};
+        dim3 blocks
+        {
+            (unsigned int) (dst.cols_ + threads.x - 1) / threads.x,
+            (unsigned int) (dst.rows_ + threads.y - 1) / threads.y,
+            dst.depth_
+        };
+        kernels::max_pool<<<blocks, threads>>>(dst, *this,
+                feature_x, feature_y, stride_x, stride_y);
         CUDA_CHECK(cudaGetLastError());
     }
 
