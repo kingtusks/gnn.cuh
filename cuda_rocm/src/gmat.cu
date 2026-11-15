@@ -147,24 +147,26 @@ namespace gnn
 
     // constructors
 
-    Tensor::Tensor(size_t rows, size_t cols, size_t depth) :
-        rows_(rows), cols_(cols), depth_(depth), stride_(cols), dstride_(rows * cols), es_(nullptr)
+    Tensor::Tensor(std::initializer_list<unsigned int> dims) :
+        dims_(0), es_(nullptr)
     {
-        CUDA_CHECK(cudaMalloc((void**)&es_, rows * cols * depth * sizeof(float)));
+        GNN_ASSERT(dims.size() > 0 && dims.size() <= max_dims);
+
+        dims_ = dims.size();
+        size_t d {};
+        for (size_t dim : dims)
+            shape[d++] = dim;
+
+        strides[dims_ - 1] = 1;
+        for (size_t d {dims_ - 1}; d-- > 0; )
+            strides_[d] = strides_[d + 1] * shape_[d + 1];
+
+        CUDA_CHECK(cudaMalloc((void**)&es_, strides[0] * shape[0] * sizeof(float)));
     }
 
-    Tensor::Tensor(size_t rows, size_t cols, size_t depth, size_t stride, size_t dstride, const float *h_es) :
-        Tensor(rows, cols, depth)
+    Tensor::Tensor(std::initializer_list<unsigned int> dims, const float *h_es)
     {
-        for (size_t i {}; i < depth; ++i)
-        {
-            CUDA_CHECK(cudaMemcpy2D(
-                es_ + i * dstride_, stride_ * sizeof(float),
-                h_es + i * dstride, stride * sizeof(float),
-                cols * sizeof(float),
-                rows, cudaMemcpyHostToDevice
-            ));
-        }
+
     }
 
     // public impl

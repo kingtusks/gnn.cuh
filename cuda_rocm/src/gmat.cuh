@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cuda_runtime.h>
+#include <initializer_list>
 #ifndef GNN_ASSERT
 #include <cassert>
 #define GNN_ASSERT assert
@@ -12,6 +13,7 @@
 
 namespace gnn {
     static std::uint64_t tensor_rand_seed {0x16122008ULL};
+    static size_t max_dims {5}; // 5 for now cus uh yea
 
     void cuda_check(cudaError_t err, const char* file, int line);
     void set_seed(std::uint64_t seed);
@@ -34,13 +36,14 @@ namespace gnn {
     #define TENSOR_PRINT(t) (t).print(#t)
 
     struct Tensor {
-        unsigned int rows_, cols_, stride_;
-        unsigned int depth_, dstride_;
+        unsigned int dims_;
+        unsigned int shape_[max_dims];
+        unsigned int strides_[max_dims];
         float *es_;
 
         Tensor() = default;
-        Tensor(size_t rows, size_t cols, size_t depth);
-        Tensor(size_t rows, size_t cols, size_t depth, size_t stride, size_t dstride, const float *h_es);
+        Tensor(std::initializer_list<unsigned int> dims);
+        Tensor(std::initializer_list<unsigned int> dims, const float *h_es);
 
         Tensor clone() const;
         void pad(Tensor dst, float p_num, size_t p_size);
@@ -55,6 +58,10 @@ namespace gnn {
         void adam(const Tensor g, Tensor m1, Tensor m2, size_t t, float rate);
         void max_pool(Tensor dst, const size_t* sf) const;
         void avg_pool(Tensor dst, const size_t* sf) const;
+        void sum_bias(const Tensor o);
+        void sum_collapse(const Tensor o);
+        void sum(const Tensor o);
+
         void print(const char *name) const;
 
         __host__ __device__ float& at(size_t i, size_t j, size_t k) const
