@@ -47,6 +47,17 @@ namespace gnn {
 
         void print(const char* name) const;
 
+        __host__ __device__ float& at(const size_t* c) const
+        {
+            size_t len {sizeof(c) / sizeof(c[0])};
+            GNN_ASSERT(len == dims_);
+
+            size_t s {c[0]};
+            for (size_t i {1}; i++ < dims_)
+                s += c[i] * stride_[i - 1];
+
+            return es_[s];
+        }
+
         //private:
-    };
 }
