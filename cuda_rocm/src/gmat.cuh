@@ -41,9 +41,17 @@ namespace gnn {
         unsigned int strides_[max_dims] {};
         float *es_ {};
 
-        Tensor() = default;
+        Tensor(const Tensor& other);
+        Tensor(Tensor&& other) noexcept;
+        Tensor& operator=(const Tensor& other);
+        Tensor& operator=(Tensor&& other) noexcept;
+        ~Tensor();
+
         // cols, rows, depth, etc (col is first for the stride shit)
+        Tensor() = default;
         Tensor(std::initializer_list<unsigned int> dims);
+        Tensor(std::initializer_list<unsigned int> dims, std::initializer_list<float> data);
+        Tensor(std::initializer_list<unsigned int> dims, const float* data);
 
         void print(const char* name) const;
 
@@ -58,6 +66,7 @@ namespace gnn {
 
             return es_[s];
         }
-    };
+
         //private:
+    };
 } //namespace gnn

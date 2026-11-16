@@ -24,6 +24,87 @@ namespace gnn
 
     // constructors
 
+    Tensor::~Tensor()
+    {
+        cudaFree(es_);
+    }
+
+    Tensor::Tensor(const Tensor& other) :
+        dims_(other.dims_), count_(other.count_), es_(nullptr)
+    {
+        for (size_t i {}; i < max_dims; ++i)
+        {
+            shape_[i] = other.shape_[i];
+            strides_[i] = other.strides_[i];
+        }
+
+        if (count_ > 0)
+        {
+            CUDA_CHECK(cudaMalloc((void**)&es_, count_ * sizeof(float)));
+            CUDA_CHECK(cudaMemcpy(es_, other.es_, count_ * sizeof(float), cudaMemcpyDeviceToDevice));
+        }
+    }
+
+    Tensor::Tensor(Tensor&& other) noexcept :
+        dims_(other.dims_), count_(other.count_), es_(other.es_)
+    {
+        for (size_t i {}; i < max_dims; ++i)
+        {
+            shape_[i] = other.shape_[i];
+            strides_[i] = other.strides_[i];
+        }
+        o.es_ = nullptr; o.dims_ = 0; o.count_ = 0;
+    }
+
+    Tensor& operator=(const Tensor& other)
+    {
+        if (this != &other)
+        {
+            float* n_es;
+            if (other.count_ > 0)
+            {
+                CUDA_CHECK(cudaMalloc((void**)&n_es, other.count_ * sizeof(float)));
+                CUDA_CHECK(cudaMemcpy(n_es, other.es_, other.count_ * sizeof(float), cudaMemcpyDeviceToDevice));
+            }
+
+            cudaFree(es_);
+            es_ = new_es;
+
+            dims_ = other.dims_;
+            count_ = other.count_;
+
+            for (size_t i {}; i < max_dims; ++i)
+            {
+                shape_[i] = other.shape_[i];
+                strides_[i] = other.strides_[i];
+            }
+        }
+
+        return *this;
+    }
+
+    Tensor& operator=(Tensor&& other) noexcept
+    {
+        if (this != &other)
+        {
+            cudaFree(es_);
+
+            dims_ = other.dims_;
+            count_ = other.count_;
+            es_ = other.es_;
+
+            for (size_t i {}; i < max_dims; ++i)
+            {
+                shape_[i] = other.shape_[i];
+                strides_[i] = other.strides_[i];
+            }
+
+            o.es_ = nullptr; o.dims_ = 0; other.count_ = 0;
+        }
+
+        return *this;
+    }
+
     Tensor::Tensor(std::initializer_list<unsigned int> dims) :
         dims_(0), count_(1), es_(nullptr)
     {
@@ -42,6 +123,19 @@ namespace gnn
             strides_[j] = shape_[j] * strides_[j - 1];
 
         CUDA_CHECK(cudaMalloc((void**)&es_, count_ * sizeof(float)));
+    }
+
+    Tensor::Tensor(std::initializer_list<unsigned int> dims, std::initializer_list<float> data) :
+        Tensor(dims)
+    {
+        GNN_ASSERT(data.size() == count_);
+        CUDA_CHECK(cudaMemcpy(es_, data.begin(), count_ * sizeof(float), cudaMemcpyHostToDevice));
+    }
+
+    Tensor::Tensor(std::initializer_list<unsigned int> dims, const float* host_data) :
+        Tensor(dims)
+    {
+        CUDA_CHECK(cudaMemcpy(es_, host_data, count_ * sizeof(float), cudaMemcpyHostToDevice));
     }
 
     // public impl

@@ -2,6 +2,8 @@
 
 int main() {
     gnn::Tensor t {3, 2, 4, 2};
-    TENSOR_PRINT(t);
+    gnn::Tensor t2(t);
+    TENSOR_PRINT(t2);
+
     return 0;
 }
