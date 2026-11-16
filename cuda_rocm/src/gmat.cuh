@@ -12,7 +12,7 @@
 #endif //GNN_ASSERT
 
 namespace gnn {
-    static std::uint64_t tensor_rand_seed {0x16122008ULL};
+    inline std::uint64_t tensor_rand_seed {0x16122008ULL};
     const static size_t max_dims {5}; // 5 for now cus uh yea
 
     void cuda_check(cudaError_t err, const char* file, int line);
@@ -28,7 +28,7 @@ namespace gnn {
 
     __device__ __forceinline__ float rand_float(std::uint64_t seed, std::uint64_t i)
     {
-        uint64_t r {splitmix64(splitmix64(seed) ^ i)};
+        std::uint64_t r {splitmix64(splitmix64(seed) ^ i)};
         return (float) ((r >> 40) * (1.f / 16777216.f));
     }
 
@@ -36,10 +36,10 @@ namespace gnn {
     #define TENSOR_PRINT(t) (t).print(#t)
 
     struct Tensor {
-        unsigned int dims_, count_;
-        unsigned int shape_[max_dims];
-        unsigned int strides_[max_dims];
-        float *es_;
+        unsigned int dims_ {}, count_ {};
+        unsigned int shape_[max_dims] {};
+        unsigned int strides_[max_dims] {};
+        float *es_ {};
 
         Tensor() = default;
         // cols, rows, depth, etc (col is first for the stride shit)
@@ -47,17 +47,17 @@ namespace gnn {
 
         void print(const char* name) const;
 
-        __host__ __device__ float& at(const size_t* c) const
+        template <size_t N>
+        __host__ __device__ float& at(const size_t (&c)[N]) const
         {
-            size_t len {sizeof(c) / sizeof(c[0])};
-            GNN_ASSERT(len == dims_);
+            GNN_ASSERT(N == dims_);
 
             size_t s {c[0]};
-            for (size_t i {1}; i++ < dims_)
-                s += c[i] * stride_[i - 1];
+            for (size_t i {}; ++i < N;)
+                s += c[i] * strides_[i - 1];
 
             return es_[s];
         }
-
+    };
         //private:
-}
+} //namespace gnn
