@@ -22,7 +22,7 @@ namespace gnn
 
     } // namespace kernels
 
-    // constructors
+    // constructors + ro5
 
     Tensor::~Tensor()
     {
@@ -53,10 +53,10 @@ namespace gnn
             shape_[i] = other.shape_[i];
             strides_[i] = other.strides_[i];
         }
-        o.es_ = nullptr; o.dims_ = 0; o.count_ = 0;
+        other.es_ = nullptr; other.dims_ = 0; other.count_ = 0;
     }
 
-    Tensor& operator=(const Tensor& other)
+    Tensor& Tensor::operator=(const Tensor& other)
     {
         if (this != &other)
         {
@@ -68,7 +68,7 @@ namespace gnn
             }
 
             cudaFree(es_);
-            es_ = new_es;
+            es_ = n_es;
 
             dims_ = other.dims_;
             count_ = other.count_;
@@ -83,7 +83,7 @@ namespace gnn
         return *this;
     }
 
-    Tensor& operator=(Tensor&& other) noexcept
+    Tensor& Tensor::operator=(Tensor&& other) noexcept
     {
         if (this != &other)
         {
@@ -99,7 +99,7 @@ namespace gnn
                 strides_[i] = other.strides_[i];
             }
 
-            o.es_ = nullptr; o.dims_ = 0; other.count_ = 0;
+            other.es_ = nullptr; other.dims_ = 0; other.count_ = 0;
         }
 
         return *this;
@@ -118,9 +118,9 @@ namespace gnn
             count_ *= dim;
         }
 
-        strides_[0] = shape_[0];
+        strides_[0] = 1;
         for (size_t j {}; ++j < dims_;)
-            strides_[j] = shape_[j] * strides_[j - 1];
+            strides_[j] = strides_[j - 1] * shape_[j - 1];
 
         CUDA_CHECK(cudaMalloc((void**)&es_, count_ * sizeof(float)));
     }
@@ -140,14 +140,36 @@ namespace gnn
 
     // public impl
 
+    // Tensor& Tensor::fill(float n)
+    // {
+    //
+    // }
+    //
+    // Tensor& Tensor::rand(float low, float high)
+    // {
+    //
+    // }
+
     void Tensor::print(const char* name) const
     {
+        if (count_ == 0)
+        {
+            printf("%s: empty\n", name);
+            return;
+        }
+
         float* h_es {(float*) malloc(count_ * sizeof(float))};
         CUDA_CHECK(cudaMemcpy(h_es, es_, count_ * sizeof(float), cudaMemcpyDeviceToHost));
+
+        unsigned int b[max_dims];
+        b[0] = shape_[0];
+        for (size_t i {}; ++i < dims_;)
+            b[i] = b[i - 1] * shape_[i];
 
         printf("%s: (", name);
         for (size_t i {}; i < dims_ - 1; ++i)
             printf("%u x ", shape_[i]);
+
         printf("%u)\n\n", shape_[dims_ - 1]);
 
         for (size_t i {}; i < count_; ++i)
@@ -155,10 +177,10 @@ namespace gnn
             printf("%0.8f ", h_es[i]);
 
             size_t n {i + 1};
-            if (n % strides_[0] != 0) continue;
+            if (n % b[0] != 0) continue;
 
             size_t k {};
-            while (k + 1 < dims_ && n % strides_[k + 1] == 0) ++k;
+            while (k + 1 < dims_ && n % b[k + 1] == 0) ++k;
 
             size_t nl {n == count_ ? 1 : k + 1};
             while (nl--) printf("\n");

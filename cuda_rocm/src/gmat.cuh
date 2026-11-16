@@ -53,6 +53,8 @@ namespace gnn {
         Tensor(std::initializer_list<unsigned int> dims, std::initializer_list<float> data);
         Tensor(std::initializer_list<unsigned int> dims, const float* data);
 
+        // Tensor& fill(float n);
+        // Tensor& rand(float low = {0.f}, float high = {1.f});
         void print(const char* name) const;
 
         template <size_t N>
@@ -60,9 +62,9 @@ namespace gnn {
         {
             GNN_ASSERT(N == dims_);
 
-            size_t s {c[0]};
-            for (size_t i {}; ++i < N;)
-                s += c[i] * strides_[i - 1];
+            size_t s {};
+            for (size_t i {}; i < N; ++i)
+                s += c[i] * strides_[i];
 
             return es_[s];
         }
