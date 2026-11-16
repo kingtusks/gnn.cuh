@@ -48,7 +48,7 @@ namespace gnn {
         void print(const char* name) const;
 
         template <size_t N>
-        __host__ __device__ float& at(const size_t (&c)[N]) const
+        __device__ float& at(const size_t (&c)[N]) const
         {
             GNN_ASSERT(N == dims_);
 

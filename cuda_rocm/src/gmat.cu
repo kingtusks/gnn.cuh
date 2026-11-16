@@ -51,12 +51,25 @@ namespace gnn
         float* h_es {(float*) malloc(count_ * sizeof(float))};
         CUDA_CHECK(cudaMemcpy(h_es, es_, count_ * sizeof(float), cudaMemcpyDeviceToHost));
 
-        printf("%s: ", name);
-        for (size_t i {}; i < dims_; ++i)
+        printf("%s: (", name);
+        for (size_t i {}; i < dims_ - 1; ++i)
             printf("%u x ", shape_[i]);
+        printf("%u)\n\n", shape_[dims_ - 1]);
 
         for (size_t i {}; i < count_; ++i)
-            printf("%zu: %f\n", i, h_es[i]);
+        {
+            printf("%0.8f ", h_es[i]);
+
+            size_t n {i + 1};
+            if (n % strides_[0] != 0) continue;
+
+            size_t k {};
+            while (k + 1 < dims_ && n % strides_[k + 1] == 0) ++k;
+
+            size_t nl {n == count_ ? 1 : k + 1};
+            while (nl--) printf("\n");
+        }
+
         free(h_es);
     }
 } // namespace gnn
