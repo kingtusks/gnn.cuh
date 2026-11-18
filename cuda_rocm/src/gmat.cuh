@@ -34,6 +34,7 @@ namespace gnn {
 
     #define CUDA_CHECK(call) ::gnn::cuda_check(call, __FILE__, __LINE__)
     #define TENSOR_PRINT(t) (t).print(#t)
+    #define TENSOR_INFO(t) (t).info(#t)
 
     struct Tensor {
         bool owns_ {true};
@@ -58,6 +59,7 @@ namespace gnn {
         Tensor slice(unsigned int dim, unsigned int start, unsigned int len) const;
         // Tensor& fill(float n);
         // Tensor& rand(float low = {0.f}, float high = {1.f});
+        void info(const char* name) const;
         void print(const char* name) const;
 
         template <size_t N>

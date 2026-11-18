@@ -150,6 +150,24 @@ namespace gnn
         return t;
     }
 
+    void Tensor::info(const char* name) const
+    {
+        printf("%s\n", name);
+        printf(" owns: %s\n", owns_ ? "true" : "false");
+        printf(" dims: %u\n", dims_);
+        printf(" count: %u\n", count_);
+
+        printf(" shape: { ");
+        for (size_t i {}; i < dims_; ++i)
+            printf("%u ", shape_[i]);
+        printf("}\n");
+
+        printf(" strides: { ");
+        for (size_t i {}; i < dims_; ++i)
+            printf("%u ", shape_[i]);
+        printf("}\n");
+    }
+
     void Tensor::print(const char* name) const
     {
         if (count_ == 0)

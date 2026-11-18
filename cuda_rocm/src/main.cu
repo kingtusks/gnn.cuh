@@ -12,6 +12,6 @@ int main() {
     TENSOR_PRINT(td);
 
     gnn::Tensor ti = td.slice(1, 0, 2);
-    TENSOR_PRINT(ti);
+    TENSOR_INFO(ti);
     return 0;
 }
