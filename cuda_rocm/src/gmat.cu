@@ -58,8 +58,7 @@ namespace gnn
 
     Tensor& Tensor::operator=(const Tensor& other)
     {
-        if (this != &other)
-            *this = Tensor(other);
+        if (this != &other) *this = Tensor(other);
         return *this;
     }
 
@@ -131,6 +130,26 @@ namespace gnn
     //
     // }
 
+    Tensor Tensor::slice(unsigned int dim, unsigned int start, unsigned int len) const
+    {
+        GNN_ASSERT(dim < dims_ && len > 0 && start + len <= shape_[dim]);
+
+        Tensor t;
+        t.owns_ = false;
+        t.dims_ = dims_;
+        t.es_ = es_ + start * strides_[dim];
+        t.count_ = count_ / shape_[dim] * len;
+
+        for (size_t i {}; i < dims_; ++i)
+        {
+            t.shape_[i] = shape_[i];
+            t.strides_[i] = strides_[i];
+        }
+
+        t.shape_[dim] = len;
+        return t;
+    }
+
     void Tensor::print(const char* name) const
     {
         if (count_ == 0)
@@ -155,7 +174,7 @@ namespace gnn
 
         for (size_t i {}; i < count_; ++i)
         {
-            printf("%0.8f ", h_es[i]);
+            printf("%0.6f ", h_es[i]);
 
             size_t n {i + 1};
             if (n % b[0] != 0) continue;

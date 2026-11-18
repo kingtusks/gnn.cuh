@@ -42,6 +42,7 @@ namespace gnn {
         unsigned int strides_[max_dims] {};
         float *es_ {};
 
+        //cc, mc, ca, ma, d
         Tensor(const Tensor& other);
         Tensor(Tensor&& other) noexcept;
         Tensor& operator=(const Tensor& other);
@@ -54,6 +55,7 @@ namespace gnn {
         Tensor(std::initializer_list<unsigned int> dims, std::initializer_list<float> data);
         Tensor(std::initializer_list<unsigned int> dims, const float* data);
 
+        Tensor slice(unsigned int dim, unsigned int start, unsigned int len) const;
         // Tensor& fill(float n);
         // Tensor& rand(float low = {0.f}, float high = {1.f});
         void print(const char* name) const;
