@@ -26,7 +26,7 @@ namespace gnn
 
     Tensor::~Tensor()
     {
-        cudaFree(es_);
+        if (owns_) cudaFree(es_);
     }
 
     Tensor::Tensor(const Tensor& other) :
@@ -46,40 +46,20 @@ namespace gnn
     }
 
     Tensor::Tensor(Tensor&& other) noexcept :
-        dims_(other.dims_), count_(other.count_), es_(other.es_)
+        dims_(other.dims_), count_(other.count_), es_(other.es_), owns_(other.owns_)
     {
         for (size_t i {}; i < max_dims; ++i)
         {
             shape_[i] = other.shape_[i];
             strides_[i] = other.strides_[i];
         }
-        other.es_ = nullptr; other.dims_ = 0; other.count_ = 0;
+        other.es_ = nullptr; other.dims_ = 0; other.count_ = 0; other.owns_ = true;
     }
 
     Tensor& Tensor::operator=(const Tensor& other)
     {
         if (this != &other)
-        {
-            float* n_es;
-            if (other.count_ > 0)
-            {
-                CUDA_CHECK(cudaMalloc((void**)&n_es, other.count_ * sizeof(float)));
-                CUDA_CHECK(cudaMemcpy(n_es, other.es_, other.count_ * sizeof(float), cudaMemcpyDeviceToDevice));
-            }
-
-            cudaFree(es_);
-            es_ = n_es;
-
-            dims_ = other.dims_;
-            count_ = other.count_;
-
-            for (size_t i {}; i < max_dims; ++i)
-            {
-                shape_[i] = other.shape_[i];
-                strides_[i] = other.strides_[i];
-            }
-        }
-
+            *this = Tensor(other);
         return *this;
     }
 
@@ -92,6 +72,7 @@ namespace gnn
             dims_ = other.dims_;
             count_ = other.count_;
             es_ = other.es_;
+            owns_ = other.owns_;
 
             for (size_t i {}; i < max_dims; ++i)
             {
@@ -99,7 +80,7 @@ namespace gnn
                 strides_[i] = other.strides_[i];
             }
 
-            other.es_ = nullptr; other.dims_ = 0; other.count_ = 0;
+            other.es_ = nullptr; other.dims_ = 0; other.count_ = 0; other.owns_ = true;
         }
 
         return *this;

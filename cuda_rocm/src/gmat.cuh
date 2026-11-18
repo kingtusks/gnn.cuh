@@ -36,6 +36,7 @@ namespace gnn {
     #define TENSOR_PRINT(t) (t).print(#t)
 
     struct Tensor {
+        bool owns_ {true};
         unsigned int dims_ {}, count_ {};
         unsigned int shape_[max_dims] {};
         unsigned int strides_[max_dims] {};
