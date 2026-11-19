@@ -58,7 +58,8 @@ namespace gnn {
         Tensor(std::initializer_list<unsigned int> dims, const float* data);
 
         Tensor slice(unsigned int dim, unsigned int start, unsigned int len) const;
-        // Tensor& fill(float n);
+        bool is_contiguous() const;
+        Tensor& fill(float n);
         // Tensor& rand(float low = {0.f}, float high = {1.f});
         void info(const char* name) const;
         void print(const char* name) const;

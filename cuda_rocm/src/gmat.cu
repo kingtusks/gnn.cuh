@@ -120,15 +120,21 @@ namespace gnn
 
     // public impl
 
-    // Tensor& Tensor::fill(float n)
-    // {
-    //
-    // }
-    //
-    // Tensor& Tensor::rand(float low, float high)
-    // {
-    //
-    // }
+    bool Tensor::is_contiguous() const
+    {
+        size_t expected {1};
+        for (size_t i {}; i < dims_; ++i)
+        {
+            if (shape_[i] > 1 && strides_[i] != expected) return false;
+            expected *= shape_[i];
+        }
+        return true;
+    }
+
+    Tensor& Tensor::fill(float n)
+    {
+
+    }
 
     Tensor Tensor::slice(unsigned int dim, unsigned int start, unsigned int len) const
     {
