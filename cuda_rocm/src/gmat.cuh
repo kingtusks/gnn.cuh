@@ -39,7 +39,8 @@ namespace gnn {
 
     struct Tensor {
         bool owns_ {true};
-        unsigned int dims_ {}, count_ {};
+        unsigned int dims_ {};
+        size_t count_ {};
         unsigned int shape_[max_dims] {};
         unsigned int strides_[max_dims] {};
         float *es_ {};

@@ -19,7 +19,26 @@ namespace gnn
 
     namespace kernels
     {
+        // used bc we cant transfer shape and strides directly from the tensor object to the kernel
+        struct KernelTensorInfo {
+            unsigned int dims_;
+            unsigned int shape_[max_dims];
+            unsigned int strides_[max_dims];
+        };
 
+        __global__ void fill(float* es, KernelTensorInfo kti, size_t count, float n)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t idx {};
+            for (size_t j {}; j < kti.dims_; ++j)
+            {
+                idx += (i % kti.shape_[j]) * kti.strides_[j];
+                i /= kti.shape_[j];
+            }
+            es[idx] = n;
+        }
     } // namespace kernels
 
     // constructors + ro5
@@ -133,7 +152,19 @@ namespace gnn
 
     Tensor& Tensor::fill(float n)
     {
+        kernels::KernelTensorInfo kti {};
+        kti.dims_ = dims_;
+        for (size_t i {}; i < dims_; ++i)
+        {
+            kti.shape_[i] = shape_[i];
+            kti.strides_[i] = strides_[i];
+        }
 
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
+        kernels::fill<<<blocks, threads>>>(es_, kti, count_, n);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
     }
 
     Tensor Tensor::slice(unsigned int dim, unsigned int start, unsigned int len) const
@@ -161,7 +192,7 @@ namespace gnn
         printf("%s\n", name);
         printf(" owns: %s\n", owns_ ? "true" : "false");
         printf(" dims: %u\n", dims_);
-        printf(" count: %u\n", count_);
+        printf(" count: %zu\n", count_);
 
         printf(" shape: { ");
         for (size_t i {}; i < dims_; ++i)

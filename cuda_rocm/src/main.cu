@@ -10,5 +10,8 @@ int main() {
     );
 
     gnn::Tensor ti = td.slice(0, 0, 2);
+    ti.fill(2.0f);
+    TENSOR_PRINT(ti);
+    TENSOR_PRINT(td);
     return 0;
 }
