@@ -8,10 +8,9 @@ int main() {
          1, 0, 1,
          1, 1, 0}
     );
-
     TENSOR_PRINT(td);
 
-    gnn::Tensor ti = td.slice(1, 0, 2);
-    TENSOR_INFO(ti);
+    gnn::Tensor ti = td.slice(0, 0, 2);
+    TENSOR_PRINT(ti);
     return 0;
 }

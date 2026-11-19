@@ -176,32 +176,35 @@ namespace gnn
             return;
         }
 
-        float* h_es {(float*) malloc(count_ * sizeof(float))};
-        CUDA_CHECK(cudaMemcpy(h_es, es_, count_ * sizeof(float), cudaMemcpyDeviceToHost));
+        size_t extent {1};
+        for (size_t i {}; i < dims_; ++i)
+            extent += (size_t) (shape_[i] - 1) * strides_[i];
 
-        unsigned int b[max_dims];
-        b[0] = shape_[0];
-        for (size_t i {}; ++i < dims_;)
-            b[i] = b[i - 1] * shape_[i];
+        float* h_es {(float*) malloc(extent * sizeof(float))};
+        CUDA_CHECK(cudaMemcpy(h_es, es_, extent * sizeof(float), cudaMemcpyDeviceToHost));
 
         printf("%s: (", name);
         for (size_t i {}; i < dims_ - 1; ++i)
             printf("%u x ", shape_[i]);
-
         printf("%u)\n\n", shape_[dims_ - 1]);
 
         for (size_t i {}; i < count_; ++i)
         {
-            printf("%0.6f ", h_es[i]);
+            size_t idx {}, remainder {i};
+            for (size_t j {}; j < dims_; ++j)
+            {
+                idx += (remainder % shape_[j]) * strides_[j];
+                remainder /= shape_[j];
+            }
+            printf("%0.6f ", h_es[idx]);
 
-            size_t n {i + 1};
-            if (n % b[0] != 0) continue;
-
-            size_t k {};
-            while (k + 1 < dims_ && n % b[k + 1] == 0) ++k;
-
-            size_t nl {n == count_ ? 1 : k + 1};
-            while (nl--) printf("\n");
+            size_t block {1};
+            for (size_t j {}; j < dims_; ++j)
+            {
+                block *= shape_[j];
+                if ((i + 1) % block != 0) break;
+                printf("\n");
+            }
         }
 
         free(h_es);

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cuda_runtime.h>
 #include <initializer_list>
+#include <vector>
 #ifndef GNN_ASSERT
 #include <cassert>
 #define GNN_ASSERT assert
