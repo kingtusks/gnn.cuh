@@ -39,6 +39,20 @@ namespace gnn
             }
             es[idx] = n;
         }
+
+        __global__ void rand(float* es, KernelTensorInfo kti, size_t count, std::uint64_t seed, float low, float high)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t idx {};
+            for (size_t j {}; j < kti.dims_; ++j)
+            {
+                idx += (i % kti.shape_[j]) * kti.strides_[j];
+                i /= kti.shape_[j];
+            }
+            es[idx] = rand_float(seed, idx) * (high - low) + low;
+        }
     } // namespace kernels
 
     // constructors + ro5
@@ -163,6 +177,24 @@ namespace gnn
         unsigned int threads {256};
         unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
         kernels::fill<<<blocks, threads>>>(es_, kti, count_, n);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor& Tensor::rand(float low, float high)
+    {
+        kernels::KernelTensorInfo kti {};
+        kti.dims_ = dims_;
+        for (size_t i {}; i < dims_; ++i)
+        {
+            kti.shape_[i] = shape_[i];
+            kti.strides_[i] = strides_[i];
+        }
+        std::uint64_t seed {++tensor_rand_seed};
+
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
+        kernels::rand<<<blocks, threads>>>(es_, kti, count_, seed, low, high);
         CUDA_CHECK(cudaGetLastError());
         return *this;
     }
