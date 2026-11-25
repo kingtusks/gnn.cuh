@@ -75,6 +75,20 @@ namespace gnn
 
             es[d_idx] = inside ? src_es[src_idx] : p_num;
         }
+
+        __global__ void sgd(float* es, float* g_es, KernelTensorInfo kti, size_t count, float rate)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t idx {};
+            for (size_t j {}; j < kti.dims_; ++j)
+            {
+                idx += (i % kti.shape_[j]) * kti.strides_[j];
+                i /= kti.shape_[j];
+            }
+            es[idx] -= rate * g_es[idx];
+        }
     } // namespace kernels
 
     // constructors + ro5
@@ -238,6 +252,22 @@ namespace gnn
         unsigned int threads {256};
         unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
         kernels::pad<<<blocks, threads>>>(es_, src.es_, kernel_info(), src.kernel_info(), count_, p_size, p_num);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor& sgd(const Tensor& g, float rate)
+    {
+        GNN_ASSERT(dims_ == g.dims_);
+        for (size_t i {}; i < dims_, ++i)
+        {
+            GNN_ASSERT(shape_[i] == g.shape_[i]);
+            GNN_ASSERT(strides_[i] == g.strides_[i]);
+        }
+
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
+        kernels::sgd<<<blocks, threads>>>(es_, g.es_, kernel_info(), count_, rate);
         CUDA_CHECK(cudaGetLastError());
         return *this;
     }

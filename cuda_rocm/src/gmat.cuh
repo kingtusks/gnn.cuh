@@ -70,6 +70,7 @@ namespace gnn {
         Tensor& fill(float n);
         Tensor& rand(float low = {0.0f}, float high = {1.0f});
         Tensor& pad(const Tensor& src, float p_num = {0.0f}, unsigned int p_size = {1});
+        Tensor& sgd(const Tensor& g, float rate);
         KernelTensorInfo kernel_info() const;
         void info(const char* name) const;
         void print(const char* name) const;
