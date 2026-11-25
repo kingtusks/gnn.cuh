@@ -13,7 +13,7 @@
 #endif //GNN_ASSERT
 
 namespace gnn {
-    inline std::uint64_t tensor_rand_seed {0x16122008ULL};
+    inline std::uint64_t tensor_rand_seed {0x040507ULL};
     const static size_t max_dims {5}; // 5 for now cus uh yea
 
     void cuda_check(cudaError_t err, const char* file, int line);
@@ -36,6 +36,13 @@ namespace gnn {
     #define CUDA_CHECK(call) ::gnn::cuda_check(call, __FILE__, __LINE__)
     #define TENSOR_PRINT(t) (t).print(#t)
     #define TENSOR_INFO(t) (t).info(#t)
+
+    // used bc we cant transfer shape and strides directly from the tensor object to the kernel
+    struct KernelTensorInfo {
+        unsigned int dims_;
+        unsigned int shape_[max_dims];
+        unsigned int strides_[max_dims];
+    };
 
     struct Tensor {
         bool owns_ {true};
@@ -61,7 +68,9 @@ namespace gnn {
         Tensor slice(unsigned int dim, unsigned int start, unsigned int len) const;
         bool is_contiguous() const;
         Tensor& fill(float n);
-        Tensor& rand(float low = {0.f}, float high = {1.f});
+        Tensor& rand(float low = {0.0f}, float high = {1.0f});
+        Tensor& pad(const Tensor& src, float p_num = {0.0f}, unsigned int p_size = {1});
+        KernelTensorInfo kernel_info() const;
         void info(const char* name) const;
         void print(const char* name) const;
 

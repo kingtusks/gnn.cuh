@@ -19,13 +19,6 @@ namespace gnn
 
     namespace kernels
     {
-        // used bc we cant transfer shape and strides directly from the tensor object to the kernel
-        struct KernelTensorInfo {
-            unsigned int dims_;
-            unsigned int shape_[max_dims];
-            unsigned int strides_[max_dims];
-        };
-
         __global__ void fill(float* es, KernelTensorInfo kti, size_t count, float n)
         {
             size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
@@ -40,7 +33,8 @@ namespace gnn
             es[idx] = n;
         }
 
-        __global__ void rand(float* es, KernelTensorInfo kti, size_t count, std::uint64_t seed, float low, float high)
+        __global__ void rand(float* es, KernelTensorInfo kti,
+                size_t count, std::uint64_t seed, float low, float high)
         {
             size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
             if (i >= count) return;
@@ -52,6 +46,33 @@ namespace gnn
                 i /= kti.shape_[j];
             }
             es[idx] = rand_float(seed, idx) * (high - low) + low;
+        }
+
+        __global__ void pad(float* es, float* src_es,
+                KernelTensorInfo kti, KernelTensorInfo src_kti,
+                size_t count, unsigned int p_size, float p_num)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t d_idx {}, src_idx {};
+            bool inside {true};
+
+            for (size_t j {}; j < kti.dims_; ++j)
+            {
+                unsigned int c {(unsigned int) (i % kti.shape_[j])};
+                i /= kti.shape_[j];
+
+                d_idx += (size_t) c * kti.strides_[j];
+
+                unsigned int p_append {j < 2 ? p_size : 0};
+                if (c < p_append || c >= p_append + src_kti.shape_[j])
+                    inside = false;
+                else
+                    src_idx += (size_t) (c - p_append) * src_kti.strides_[j];
+            }
+
+            es[d_idx] = inside ? src_es[src_idx] : p_num;
         }
     } // namespace kernels
 
@@ -166,13 +187,7 @@ namespace gnn
 
     Tensor& Tensor::fill(float n)
     {
-        kernels::KernelTensorInfo kti {};
-        kti.dims_ = dims_;
-        for (size_t i {}; i < dims_; ++i)
-        {
-            kti.shape_[i] = shape_[i];
-            kti.strides_[i] = strides_[i];
-        }
+        KernelTensorInfo kti {kernel_info()};
 
         unsigned int threads {256};
         unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
@@ -183,15 +198,9 @@ namespace gnn
 
     Tensor& Tensor::rand(float low, float high)
     {
-        kernels::KernelTensorInfo kti {};
-        kti.dims_ = dims_;
-        for (size_t i {}; i < dims_; ++i)
-        {
-            kti.shape_[i] = shape_[i];
-            kti.strides_[i] = strides_[i];
-        }
-        std::uint64_t seed {++tensor_rand_seed};
+        KernelTensorInfo kti {kernel_info()};
 
+        std::uint64_t seed {++tensor_rand_seed};
         unsigned int threads {256};
         unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
         kernels::rand<<<blocks, threads>>>(es_, kti, count_, seed, low, high);
@@ -219,6 +228,31 @@ namespace gnn
         return t;
     }
 
+    Tensor& Tensor::pad(const Tensor& src, float p_num, unsigned int p_size)
+    {
+        GNN_ASSERT(dims_ == src.dims_ && dims_ >= 2);
+        for (size_t j {}; j < dims_; ++j)
+            GNN_ASSERT(shape_[j] == src.shape_[j] + (j < 2 ? 2 * p_size : 0));
+
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
+        kernels::pad<<<blocks, threads>>>(es_, src.es_, kernel_info(), src.kernel_info(), count_, p_size, p_num);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    KernelTensorInfo Tensor::kernel_info() const
+    {
+        KernelTensorInfo kti {};
+        kti.dims_ = dims_;
+        for (size_t i {}; i < dims_; ++i)
+        {
+            kti.shape_[i] = shape_[i];
+            kti.strides_[i] = strides_[i];
+        }
+        return kti;
+    }
+
     void Tensor::info(const char* name) const
     {
         printf("%s\n", name);
@@ -233,7 +267,7 @@ namespace gnn
 
         printf(" strides: { ");
         for (size_t i {}; i < dims_; ++i)
-            printf("%u ", shape_[i]);
+            printf("%u ", strides_[i]);
         printf("}\n");
     }
 

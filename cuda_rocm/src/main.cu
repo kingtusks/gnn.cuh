@@ -1,16 +1,11 @@
 #include "gmat.cuh"
 
 int main() {
-    gnn::Tensor td(
-        {3, 4},
-        {0, 0, 0,
-         0, 1, 1,
-         1, 0, 1,
-         1, 1, 0}
-    );
+    gnn::Tensor t({3, 4, 2, 2});
+    gnn::Tensor u({5, 6, 2, 2});
 
-    gnn::Tensor ti = td.slice(0, 0, 2);
-    ti.rand();
-    TENSOR_PRINT(ti);
+    t.fill(1.0f);
+    u.pad(t);
+    TENSOR_PRINT(u);
     return 0;
 }
