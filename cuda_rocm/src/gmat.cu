@@ -76,7 +76,8 @@ namespace gnn
             es[d_idx] = inside ? src_es[src_idx] : p_num;
         }
 
-        __global__ void sgd(float* es, float* g_es, KernelTensorInfo kti, size_t count, float rate)
+        __global__ void sgd(float* es, float* g_es, KernelTensorInfo kti,
+                size_t count, float rate)
         {
             size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
             if (i >= count) return;
@@ -88,6 +89,23 @@ namespace gnn
                 i /= kti.shape_[j];
             }
             es[idx] -= rate * g_es[idx];
+        }
+
+        __global__ void momentum(float* es, float* g_es, float* v_es,
+                KernelTensorInfo kti, size_t count, float rate)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t idx {};
+            for (size_t j {}; j < kti.dims_; ++j)
+            {
+                idx += (i % kti.shape_[j]) * kti.strides_[j];
+                i /= kti.shape_[j];
+            }
+            float v {0.9f * v_es[idx] + g_es[idx]};
+            v_es[idx] = v;
+            es[idx] -= rate * v;
         }
     } // namespace kernels
 
@@ -200,6 +218,16 @@ namespace gnn
         return true;
     }
 
+    void Tensor::same_structure(const Tensor& other) const
+    {
+        GNN_ASSERT(dims_ == other.dims_);
+        for (size_t i {}; i < dims_; ++i)
+        {
+            GNN_ASSERT(shape_[i] == other.shape_[i]);
+            GNN_ASSERT(strides_[i] == other.strides_[i]);
+        }
+    }
+
     Tensor& Tensor::fill(float n)
     {
         KernelTensorInfo kti {kernel_info()};
@@ -256,18 +284,25 @@ namespace gnn
         return *this;
     }
 
-    Tensor& sgd(const Tensor& g, float rate)
+    Tensor& Tensor::sgd(const Tensor& g, float rate)
     {
-        GNN_ASSERT(dims_ == g.dims_);
-        for (size_t i {}; i < dims_, ++i)
-        {
-            GNN_ASSERT(shape_[i] == g.shape_[i]);
-            GNN_ASSERT(strides_[i] == g.strides_[i]);
-        }
+        same_structure(g);
 
         unsigned int threads {256};
         unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
         kernels::sgd<<<blocks, threads>>>(es_, g.es_, kernel_info(), count_, rate);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor& Tensor::momentum(const Tensor& g, Tensor& v, float rate)
+    {
+        same_structure(g);
+        same_structure(v);
+
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
+        kernels::momentum<<<blocks, threads>>>(es_, g.es_, v.es_, kernel_info(), count_, rate);
         CUDA_CHECK(cudaGetLastError());
         return *this;
     }
