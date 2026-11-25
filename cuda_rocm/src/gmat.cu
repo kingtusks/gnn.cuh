@@ -37,6 +37,7 @@ namespace gnn
                 size_t count, std::uint64_t seed, float low, float high)
         {
             size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            size_t i2 {i};
             if (i >= count) return;
 
             size_t idx {};
@@ -45,7 +46,7 @@ namespace gnn
                 idx += (i % kti.shape_[j]) * kti.strides_[j];
                 i /= kti.shape_[j];
             }
-            es[idx] = rand_float(seed, idx) * (high - low) + low;
+            es[idx] = rand_float(seed, i2) * (high - low) + low;
         }
 
         __global__ void pad(float* es, float* src_es,
@@ -120,7 +121,7 @@ namespace gnn
     {
         if (this != &other)
         {
-            cudaFree(es_);
+            if (owns_) cudaFree(es_);
 
             dims_ = other.dims_;
             count_ = other.count_;
