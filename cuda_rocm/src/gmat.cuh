@@ -73,6 +73,7 @@ namespace gnn {
         Tensor& pad(const Tensor& src, float p_num = {0.0f}, unsigned int p_size = {1});
         Tensor& sgd(const Tensor& g, float rate);
         Tensor& momentum(const Tensor& g, Tensor& v, float rate);
+        Tensor& adam(const Tensor& g, Tensor& m1, Tensor& m2, size_t t, float b1 = {0.9f}, float b2 = {0.999f}, float rate = {1e-3f}, float eps = {1e-8f});
         KernelTensorInfo kernel_info() const;
         void info(const char* name) const;
         void print(const char* name) const;

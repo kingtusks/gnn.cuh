@@ -107,6 +107,27 @@ namespace gnn
             v_es[idx] = v;
             es[idx] -= rate * v;
         }
+
+        __global__ void adam(float* es, float* g_es, float* m1_es, float* m2_es,
+                KernelTensorInfo kti, size_t count, float b1, float b2, float c1, float c2,
+                float rate, float eps)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t idx {};
+            for (size_t j {}; j < kti.dims_; ++j)
+            {
+                idx += (i % kti.shape_[j]) * kti.strides_[j];
+                i /= kti.shape_[j];
+            }
+            float grad {g_es[idx]};
+            float a {b1 * m1_es[idx] + (1.0f - b1) * grad};
+            float b {b2 * m2_es[idx] + (1.0f - b2) * grad * grad};
+            m1_es[idx] = a;
+            m2_es[idx] = b;
+            es[idx] -= rate * (a / c1) / (sqrtf(b / c2) + eps);
+        }
     } // namespace kernels
 
     // constructors + ro5
@@ -303,6 +324,24 @@ namespace gnn
         unsigned int threads {256};
         unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
         kernels::momentum<<<blocks, threads>>>(es_, g.es_, v.es_, kernel_info(), count_, rate);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor& adam(const Tensor& g, Tensor& m1, Tensor& m2, size_t t, float b1, float b2, float rate, float eps)
+    {
+        GNN_ASSERT(t > 0);
+        same_structure(g);
+        same_structure(m1);
+        same_structure(m2);
+
+        float c1 {1.0f - powf(b1, (float) t)};
+        float c2 {1.0f - powf(b2, (float) t)};
+
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
+        kernels::adam<<<blocks, threads>>>(es_, g.es_, m1.es_, m2.es_, kernel_info(),
+                count_, b1, b2, c1, c2, rate, eps);
         CUDA_CHECK(cudaGetLastError());
         return *this;
     }
