@@ -124,9 +124,59 @@ namespace gnn
             float grad {g_es[idx]};
             float a {b1 * m1_es[idx] + (1.0f - b1) * grad};
             float b {b2 * m2_es[idx] + (1.0f - b2) * grad * grad};
-            m1_es[idx] = a;
-            m2_es[idx] = b;
+            m1_es[idx] = a; m2_es[idx] = b;
             es[idx] -= rate * (a / c1) / (sqrtf(b / c2) + eps);
+        }
+
+        __device__ __forceinline__ void group_pool(size_t i, const KernelTensorInfo& kti,
+                const KernelTensorInfo& src_kti, size_t sx, size_t sy, size_t& d_idx, size_t& sbase)
+        {
+            d_idx = 0; sbase = 0;
+            for (size_t j {}; j < kti.dims_; ++j)
+            {
+                size_t c {i % kti.shape_[j]};
+                i /= kti.shape_[j];
+                d_idx += c * kti.strides_[j];
+
+                size_t step {j == 0 ? sx : (j == 1 ? sy : 1)};
+                sbase += c * step * src_kti.strides_[j];
+            }
+        }
+
+        __global__ void max_pool(float* es, float* src_es,
+                KernelTensorInfo kti, KernelTensorInfo src_kti, size_t count,
+                size_t fx, size_t fy, size_t sx, size_t sy)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t d_idx, sbase;
+            group_pool(i, kti, src_kti, sx, sy, d_idx, sbase);
+
+            float b {src_es[sbase]};
+            for (unsigned int y {}; y < fy; ++y)
+                for(unsigned int x {}; x < fx; ++x)
+                    b = fmaxf(b, src_es[sbase + y * src_kti.strides_[1] + x * src_kti.strides_[0]]);
+
+            es[d_idx] = b;
+        }
+
+        __global__ void avg_pool(float* es, float* src_es,
+                KernelTensorInfo kti, KernelTensorInfo src_kti, size_t count,
+                size_t fx, size_t fy, size_t sx, size_t sy)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t d_idx, sbase;
+            group_pool(i, kti, src_kti, sx, sy, d_idx, sbase);
+
+            float s {};
+            for (unsigned int y {}; y < fy; ++y)
+                for(unsigned int x {}; x < fx; ++x)
+                    s += src_es[sbase + y * src_kti.strides_[1] + x * src_kti.strides_[0]];
+
+            es[d_idx] = s / (float) (fx * fy);
         }
     } // namespace kernels
 
@@ -328,7 +378,7 @@ namespace gnn
         return *this;
     }
 
-    Tensor& adam(const Tensor& g, Tensor& m1, Tensor& m2, size_t t, float b1, float b2, float rate, float eps)
+    Tensor& Tensor::adam(const Tensor& g, Tensor& m1, Tensor& m2, size_t t, float b1, float b2, float rate, float eps)
     {
         GNN_ASSERT(t > 0);
         same_structure(g);
@@ -342,6 +392,42 @@ namespace gnn
         unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
         kernels::adam<<<blocks, threads>>>(es_, g.es_, m1.es_, m2.es_, kernel_info(),
                 count_, b1, b2, c1, c2, rate, eps);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor& Tensor::max_pool(const Tensor& src, size_t fx, size_t fy, size_t sx, size_t sy)
+    {
+        GNN_ASSERT(dims_ == src.dims_ && dims_ >= 2);
+        GNN_ASSERT(sx > 0 && sy > 0 && fx > 0 && fy > 0);
+        GNN_ASSERT(src.shape_[0] >= fx && src.shape_[1] >= fy);
+        GNN_ASSERT(shape_[0] == (src.shape_[0] - fx) / sx + 1);
+        GNN_ASSERT(shape_[1] == (src.shape_[1] - fy) / sy + 1);
+        for (size_t k {2}; k < dims_; ++k)
+            GNN_ASSERT(shape_[k] == src.shape_[k]);
+
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
+        kernels::max_pool<<<blocks, threads>>>(es_, src.es_, kernel_info(), src.kernel_info(),
+                count_, fx, fy, sx, sy);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor& Tensor::avg_pool(const Tensor& src, size_t fx, size_t fy, size_t sx, size_t sy)
+    {
+        GNN_ASSERT(dims_ == src.dims_ && dims_ >= 2);
+        GNN_ASSERT(sx > 0 && sy > 0 && fx > 0 && fy > 0);
+        GNN_ASSERT(src.shape_[0] >= fx && src.shape_[1] >= fy);
+        GNN_ASSERT(shape_[0] == (src.shape_[0] - fx) / sx + 1);
+        GNN_ASSERT(shape_[1] == (src.shape_[1] - fy) / sy + 1);
+        for (size_t k {2}; k < dims_; ++k)
+            GNN_ASSERT(shape_[k] == src.shape_[k]);
+
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
+        kernels::avg_pool<<<blocks, threads>>>(es_, src.es_, kernel_info(), src.kernel_info(),
+                count_, fx, fy, sx, sy);
         CUDA_CHECK(cudaGetLastError());
         return *this;
     }
