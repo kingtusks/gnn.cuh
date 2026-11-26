@@ -34,6 +34,23 @@ namespace gnn
 
     namespace kernels
     {
+        __global__ void copy_from(float* es, float* src_es,
+                KernelTensorInfo kti, KernelTensorInfo src_kti, size_t count)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t d_idx {}, s_idx {};
+            for (size_t j {}; j < kti.dims_; ++j)
+            {
+                size_t c {i % kti.shape_[j]};
+                i /= kti.shape_[j];
+                d_idx += c * kti.strides_[j];
+                s_idx += c * src_kti.strides_[j];
+            }
+            es[d_idx] = src_es[s_idx];
+        }
+
         __global__ void fill(float* es, KernelTensorInfo kti, size_t count, float n)
         {
             size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
@@ -482,6 +499,20 @@ namespace gnn
             GNN_ASSERT(shape_[i] == other.shape_[i]);
             GNN_ASSERT(strides_[i] == other.strides_[i]);
         }
+    }
+
+    Tensor& Tensor::copy_from(const Tensor& src)
+    {
+        GNN_ASSERT(dims_ = src.dims_);
+        for (size_t i {}; i < dims_; ++i)
+            GNN_ASSERT(shape_[i] == src.shape_[i]);
+
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
+        kernels::copy_from<<<blocks, threads>>>(es_, src.es_, kernel_info(),
+                src.kernel_info(), count_);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
     }
 
     Tensor& Tensor::fill(float n)

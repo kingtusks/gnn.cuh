@@ -68,6 +68,7 @@ namespace gnn
         Tensor(std::initializer_list<unsigned int> dims, std::initializer_list<float> data);
         Tensor(std::initializer_list<unsigned int> dims, const float* data);
 
+        Tensor& copy_from(const Tensor& src);
         Tensor slice(unsigned int dim, unsigned int start, unsigned int len) const;
         bool is_contiguous() const;
         void same_structure(const Tensor& other) const;

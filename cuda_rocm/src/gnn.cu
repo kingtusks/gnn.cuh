@@ -25,7 +25,7 @@ namespace gnn
         for (size_t i {}; i < count_; ++i)
         {
             w_[i].rand(low, high);
-            b_[i].fill(low, high);
+            b_[i].rand(low, high);
         }
     }
 

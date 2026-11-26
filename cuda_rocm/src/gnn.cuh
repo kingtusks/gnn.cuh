@@ -18,5 +18,6 @@ namespace gnn
         void nn_rand_he();
         void nn_fill(float n);
         void nn_forward();
+        float nn_cost(Tensor ti, Tensor to);
     }; //struct nn
 } //namespace gnn
