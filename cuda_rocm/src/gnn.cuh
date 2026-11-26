@@ -11,10 +11,11 @@ namespace gnn
 
         NN(const std::vector<unsigned int>& dims, unsigned int batch);
 
-        Tensor& input() { return a_.front() };
-        Tensor& output() { return a_.back() };
+        Tensor& input() { return a_.front(); };
+        Tensor& output() { return a_.back(); };
 
         void nn_rand();
         void nn_rand_he();
+        void nn_fill(float n);
     }; //struct nn
 } //namespace gnn

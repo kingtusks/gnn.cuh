@@ -37,8 +37,19 @@ namespace gnn
             a_[i + 1].dot(w_[i], a_[i]);
             a_[i + 1].sum_bias(b_[i]);
 
-            if (i + 1 < count) a_[i + 1].leaky_relu();
+            if (i + 1 < count_) a_[i + 1].leaky_relu();
             else a_[i + 1].softmax();
         }
+    }
+
+    void NN::nn_fill(float n)
+    {
+        for (size_t i {}; i < count_; ++i)
+        {
+            w_[i].fill(n);
+            b_[i].fill(n);
+            a_[i].fill(n);
+        }
+        output().fill(n);
     }
 } //namespace gnn
