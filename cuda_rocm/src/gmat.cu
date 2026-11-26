@@ -203,6 +203,23 @@ namespace gnn
 
             es[i * kti.strides_[0]] = s;
         }
+
+        __global__ void sum(float* es, const float* other_es,
+                KernelTensorInfo kti, KernelTensorInfo other_kti, size_t count)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= other_kti.shape_[0]) return;
+
+            size_t d_idx {}, o_idx {};
+            for (size_t j {}; j < kti.dims_; ++j)
+            {
+                size_t c {i % kti.shape_[j]};
+                i /= kti.shape_[j];
+                d_idx += c * kti.strides_[j];
+                o_idx += c * other_kti.strides_[j];
+            }
+            es[d_idx] += other_es[o_idx];
+        }
     } // namespace kernels
 
     // constructors + ro5
@@ -479,6 +496,26 @@ namespace gnn
         kernels::sum_collapse<<<blocks, threads>>>(es_, other.es_, kernel_info(), other.kernel_info());
         CUDA_CHECK(cudaGetLastError());
         return *this;
+    }
+
+    Tensor& Tensor::sum(const Tensor& other)
+    {
+        GNN_ASSERT(dims_ == other.dims_);
+        for (size_t i {}; i < dims_; ++i)
+            GNN_ASSERT(shape_[i] == other.shape_[i]);
+
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) (other.shape_[0] + threads - 1) / threads};
+        kernels::sum<<<blocks, threads>>>(es_, other.es_, kernel_info(), other.kernel_info(), count_);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor Tensor::operator+(const Tensor& other)
+    {
+        Tensor o(*this);
+        o += other;
+        return o;
     }
 
     KernelTensorInfo Tensor::kernel_info() const

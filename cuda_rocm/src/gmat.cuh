@@ -78,6 +78,9 @@ namespace gnn {
         Tensor& avg_pool(const Tensor& src, size_t fx, size_t fy, size_t sx, size_t sy);
         Tensor& sum_bias(const Tensor& other);
         Tensor& sum_collapse(const Tensor& other);
+        Tensor& sum(const Tensor& other);
+        Tensor& operator+=(const Tensor& other) { return sum(other); };
+        Tensor operator+(const Tensor& other);
         KernelTensorInfo kernel_info() const;
         void info(const char* name) const;
         void print(const char* name) const;
