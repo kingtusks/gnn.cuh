@@ -20,13 +20,12 @@ namespace gnn
         }
     }
 
-    void NN::nn_rand()
+    void NN::nn_rand(float low, float high)
     {
         for (size_t i {}; i < count_; ++i)
         {
-            float lim {sqrtf(6.0f / (float) w_[i].shape_[1])};
-            w_[i].rand(-lim, lim);
-            b_[i].fill(0.0f);
+            w_[i].rand(low, high);
+            b_[i].fill(low, high);
         }
     }
 
@@ -34,11 +33,9 @@ namespace gnn
     {
         for (size_t i {}; i < count_; ++i)
         {
-            a_[i + 1].dot(w_[i], a_[i]);
-            a_[i + 1].sum_bias(b_[i]);
-
-            if (i + 1 < count_) a_[i + 1].leaky_relu();
-            else a_[i + 1].softmax();
+            float lim {sqrtf(6.0f / (float) w_[i].shape_[1])};
+            w_[i].rand(-lim, lim);
+            b_[i].fill(0.0f);
         }
     }
 
@@ -51,5 +48,17 @@ namespace gnn
             a_[i].fill(n);
         }
         output().fill(n);
+    }
+
+    void NN::nn_forward()
+    {
+        for (size_t i {}; i < count_; ++i)
+        {
+            a_[i + 1].dot(w_[i], a_[i]);
+            a_[i + 1].sum_bias(b_[i]);
+
+            if (i + 1 < count_) a_[i + 1].leaky_relu();
+            else a_[i + 1].softmax();
+        }
     }
 } //namespace gnn
