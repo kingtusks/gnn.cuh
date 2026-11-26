@@ -18,6 +18,9 @@ add_executable(gnn
     ../datasets/mnist/mnist.h
 )
 
+find_package(CUDAToolkit REQUIRED)
+target_link_libraries(gnn PRIVATE CUDA::cublas)
+
 set_target_properties(gnn PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
 target_compile_options(gnn PRIVATE

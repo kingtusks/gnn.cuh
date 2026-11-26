@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cmath>
 #include <cstdint>
+#include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <initializer_list>
 #include <vector>
@@ -81,6 +82,7 @@ namespace gnn {
         Tensor& sum(const Tensor& other);
         Tensor& operator+=(const Tensor& other) { return sum(other); };
         Tensor operator+(const Tensor& other);
+        Tensor& dot(const Tensor& a, const Tensor& b, bool aT = {false}, bool bT = {false}, bool naive = {false});
         KernelTensorInfo kernel_info() const;
         void info(const char* name) const;
         void print(const char* name) const;

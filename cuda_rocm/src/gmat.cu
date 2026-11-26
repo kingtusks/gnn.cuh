@@ -1,5 +1,9 @@
 #include "gmat.cuh"
 
+// voodoo magic right under ts
+#define CUBLAS_CHECK(call) do { cublasStatus_t s_ = (call); if (s_ != CUBLAS_STATUS_SUCCESS) { \
+    printf("%s:%d cuBLAS error %d\n", __FILE__, __LINE__, (int) s_); exit(EXIT_FAILURE); } } while (0)
+
 namespace gnn
 {
     // non-Tensor functions
@@ -15,6 +19,17 @@ namespace gnn
     void set_seed(std::uint64_t seed)
     {
         tensor_rand_seed = seed;
+    }
+
+    static cublasHandle_t cublas_handle()
+    {
+        static cublasHandle_t h {};
+        if (!h)
+        {
+            CUBLAS_CHECK(cublasCreate(&h));
+            atexit([] { cublasDestroy(cublas_handle()); });
+        }
+        return h;
     }
 
     namespace kernels
@@ -516,6 +531,11 @@ namespace gnn
         Tensor o(*this);
         o += other;
         return o;
+    }
+
+    Tensor& Tensor::dot(const Tensor& a, const Tensor& b, bool aT, bool bT, bool naive)
+    {
+
     }
 
     KernelTensorInfo Tensor::kernel_info() const
