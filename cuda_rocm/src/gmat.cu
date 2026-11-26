@@ -178,6 +178,31 @@ namespace gnn
 
             es[d_idx] = s / (float) (fx * fy);
         }
+
+        __global__ void sum_bias(float* es, const float* other_es,
+                KernelTensorInfo kti, KernelTensorInfo other_kti, size_t count)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t c {i % kti.shape_[0]};
+            size_t r {i / kti.shape_[0]};
+
+            es[c * kti.strides_[0] + r * kti.strides_[1]] += other_es[c * other_kti.strides_[0]];
+        }
+
+        __global__ void sum_collapse(float* es, const float* other_es,
+                KernelTensorInfo kti, KernelTensorInfo other_kti)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= other_kti.shape_[0]) return;
+
+            float s {};
+            for (size_t j {}; j < other_kti.shape_[1]; ++j)
+                s += other_es[i * other_kti.strides_[0] + j * other_kti.strides_[1]];
+
+            es[i * kti.strides_[0]] = s;
+        }
     } // namespace kernels
 
     // constructors + ro5
@@ -428,6 +453,30 @@ namespace gnn
         unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
         kernels::avg_pool<<<blocks, threads>>>(es_, src.es_, kernel_info(), src.kernel_info(),
                 count_, fx, fy, sx, sy);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor& Tensor::sum_bias(const Tensor& other)
+    {
+        GNN_ASSERT(dims_ == 2 && other.dims_ == 2);
+        GNN_ASSERT(other.shape_[0] == shape_[0] && other.shape_[1] == 1);
+
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
+        kernels::sum_bias<<<blocks, threads>>>(es_, other.es_, kernel_info(), other.kernel_info(), count_);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor& Tensor::sum_collapse(const Tensor& other)
+    {
+        GNN_ASSERT(dims_ == 2 && other.dims_ == 2);
+        GNN_ASSERT(other.shape_[0] == shape_[0] && shape_[1] == 1);
+
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) (other.shape_[0] + threads - 1) / threads};
+        kernels::sum_collapse<<<blocks, threads>>>(es_, other.es_, kernel_info(), other.kernel_info());
         CUDA_CHECK(cudaGetLastError());
         return *this;
     }

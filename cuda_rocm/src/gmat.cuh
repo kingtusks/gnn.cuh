@@ -76,6 +76,8 @@ namespace gnn {
         Tensor& adam(const Tensor& g, Tensor& m1, Tensor& m2, size_t t, float b1 = {0.9f}, float b2 = {0.999f}, float rate = {1e-3f}, float eps = {1e-8f});
         Tensor& max_pool(const Tensor& src, size_t fx, size_t fy, size_t sx, size_t sy);
         Tensor& avg_pool(const Tensor& src, size_t fx, size_t fy, size_t sx, size_t sy);
+        Tensor& sum_bias(const Tensor& other);
+        Tensor& sum_collapse(const Tensor& other);
         KernelTensorInfo kernel_info() const;
         void info(const char* name) const;
         void print(const char* name) const;
