@@ -8,6 +8,7 @@ namespace gnn
         size_t count_ {};
         unsigned int batch_ {};
         std::vector<Tensor> w_, b_, a_;
+        Tensor dc_ {1};
 
         NN(const std::vector<unsigned int>& dims, unsigned int batch);
 
@@ -18,6 +19,6 @@ namespace gnn
         void nn_rand_he();
         void nn_fill(float n);
         void nn_forward();
-        float nn_cost(Tensor ti, Tensor to);
+        float nn_cost(const Tensor& ti, const Tensor& to);
     }; //struct nn
 } //namespace gnn
