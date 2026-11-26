@@ -81,7 +81,7 @@ namespace gnn {
         Tensor& sum_collapse(const Tensor& other);
         Tensor& sum(const Tensor& other);
         Tensor& operator+=(const Tensor& other) { return sum(other); };
-        Tensor operator+(const Tensor& other);
+        Tensor operator+(const Tensor& other) const;
         Tensor& dot(const Tensor& a, const Tensor& b, bool aT = {false}, bool bT = {false}, bool naive = {false});
         Tensor& sig();
         Tensor& tanh();

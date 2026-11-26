@@ -223,7 +223,7 @@ namespace gnn
                 KernelTensorInfo kti, KernelTensorInfo other_kti, size_t count)
         {
             size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
-            if (i >= other_kti.shape_[0]) return;
+            if (i >= count) return;
 
             size_t d_idx {}, o_idx {};
             for (size_t j {}; j < kti.dims_; ++j)
@@ -298,7 +298,7 @@ namespace gnn
             es[idx] = tanhf(es[idx]);
         }
 
-        __global__ void elu(float* es, KernelTensorInfo kti, size_t count)
+        __global__ void relu(float* es, KernelTensorInfo kti, size_t count)
         {
             size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
             if (i >= count) return;
@@ -630,7 +630,7 @@ namespace gnn
         return *this;
     }
 
-    Tensor Tensor::operator+(const Tensor& other)
+    Tensor Tensor::operator+(const Tensor& other) const
     {
         Tensor o(*this);
         o += other;
@@ -654,7 +654,7 @@ namespace gnn
         {
             GNN_ASSERT(strides_[0] == 1 && a.strides_[0] == 1 && b.strides_[0] == 1);
             const float alpha {1.0f}, beta {0.0f};
-            CUBLAS_CHECK(cublasSgemm(cublasHandle(),
+            CUBLAS_CHECK(cublasSgemm(cublas_handle(),
                         aT ? CUBLAS_OP_T : CUBLAS_OP_N,
                         bT ? CUBLAS_OP_T : CUBLAS_OP_N,
                         m, n, k, &alpha,
@@ -682,16 +682,16 @@ namespace gnn
         return *this;
     }
 
-    Tensor& sig()
+    Tensor& Tensor::sig()
     {
         unsigned int threads {256};
         unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
-        kernels::sig<<<blocks, threads>>>();
-        CUDA_CHECK(cudaGetLastError(es_, kernel_info(), count_);
+        kernels::sig<<<blocks, threads>>>(es_, kernel_info(), count_);
+        CUDA_CHECK(cudaGetLastError();
         return *this;
     }
 
-    Tensor& tanh()
+    Tensor& Tensor::tanh()
     {
         unsigned int threads {256};
         unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
@@ -700,7 +700,7 @@ namespace gnn
         return *this;
     }
 
-    Tensor& relu()
+    Tensor& Tensor::relu()
     {
         unsigned int threads {256};
         unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
@@ -709,7 +709,7 @@ namespace gnn
         return *this;
     }
 
-    Tensor& leaky_relu(float slope = {1e-2f})
+    Tensor& Tensor::leaky_relu(float slope = {1e-2f})
     {
         unsigned int threads {256};
         unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
@@ -718,7 +718,7 @@ namespace gnn
         return *this;
     }
 
-    Tensor& elu(float alpha = {1.0f})
+    Tensor& Tensor::elu(float alpha = {1.0f})
     {
         unsigned int threads {256};
         unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
