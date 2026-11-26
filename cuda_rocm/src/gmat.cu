@@ -235,6 +235,40 @@ namespace gnn
             }
             es[d_idx] += other_es[o_idx];
         }
+
+        // 1024 is the max for a thread per block and 32^2 = 1024
+        constexpr unsigned int TILE {32}; 
+
+        __global__ void dot_naive(float* c_es, float* a_es, constfloat* b_es,
+                unsigned int m, unsigned int n, unsigned int k,
+                unsigned int ci, unsigned int cj,
+                unsigned int ai, unsigned int ak,
+                unsigned int bj, unsigned int bk)
+        {
+            __shared__ float As[TILE][TILE];
+            __shared__ float Bs[TILE][TILE];
+
+            unsigned int i {blockIdx.x * TILE + threadIdx.x};
+            unsigned int j {blockIdx.y * TILE + threadIdx.y};
+            float res {};
+
+            for (unsigned int t {}; t < k; t += TILE)
+            {
+                unsigned int ka {t + threadIdx.y};
+                unsigned int kb {t + threadIdx.x};
+
+                As[threadIdx.y][threadIdx.x] = (i < m && ka < k) ? a[i * ai + ka * ak] : 0.f;
+                Bs[threadIdx.y][threadIdx.x] = (kb < k && j < n) ? b[kb * bk + j * bj] : 0.f;
+                __syncthreads();
+
+                for (unsigned int u {}; u < TILE; ++u)
+                    res += As[u][threadIdx.x] * Bs[threadIdx.y][u];
+                __syncthreads();
+            }
+
+            if (i < m && j < n)
+                c[i * ci + j * cj] = res;
+        }
     } // namespace kernels
 
     // constructors + ro5
@@ -535,7 +569,47 @@ namespace gnn
 
     Tensor& Tensor::dot(const Tensor& a, const Tensor& b, bool aT, bool bT, bool naive)
     {
+        GNN_ASSERT(dims_ == 2 && a.dims_ == 2 && b.dims_ == 2);
 
+        unsigned int m {aT ? a.shape_[1] : a.shape_[0]};
+        unsigned int k {aT ? a.shape_[0] : a.shape_[1]};
+        unsigned int n {bT ? b.shape_[0] : b.shape_[1]};
+        unsigned int kb {bT ? b.shape_[1] : b.shape_[0]};
+
+        GNN_ASSERT(k == kb);
+        GNN_ASSERT(shape_[0] == m && shape_[1] == n);
+        GNN_ASSERT(es_ != a.es_ && es_ != b.es_);
+
+        if (!naive)
+        {
+            GNN_ASSERT(strides_[0] == 1 && a.strides_[0] == 1 && b.strides_[0] == 1);
+            const float alpha {1.0f}, beta {0.0f};
+            CUBLAS_CHECK(cublasSgemm(cublasHandle(),
+                        aT ? CUBLAS_OP_T : CUBLAS_OP_N,
+                        bT ? CUBLAS_OP_T : CUBLAS_OP_N,
+                        m, n, k, &alpha,
+                        a.es_, a.strides_[1],
+                        b.es_, b.strides_[1],
+                        &beta,
+                        es_, strides_[1]));
+            return *this;
+        }
+
+        unsigned int ai {aT ? a.strides_[1] : a.strides_[0]};
+        unsigned int ak {aT ? a.strides_[0] : a.strides_[1]};
+        unsigned int bj {bT ? b.strides_[0] : b.strides_[1]};
+        unsigned int bk {bT ? b.strides_[1] : b.strides_[0]};
+
+        dim3 threads {kernels::TILE, kernels::TILE};
+        dim3 blocks
+        {
+            (unsigned int) (m + kernels::TILE - 1) / kernels::TILE,
+            (unsigned int) (n + kernels::TILE - 1) / kernels::TILE,
+        };
+        kernels::dot_naive<<<blocks, threads>>>(es_, a.es_, b.es_, m, n, k,
+                strides_[0], strides_[1], ai, ak, bj, bk);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
     }
 
     KernelTensorInfo Tensor::kernel_info() const
