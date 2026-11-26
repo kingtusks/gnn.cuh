@@ -19,4 +19,26 @@ namespace gnn
             a_.push_back(Tensor({dims[i], batch}));
         }
     }
+
+    void NN::nn_rand()
+    {
+        for (size_t i {}; i < count_; ++i)
+        {
+            float lim {sqrtf(6.0f / (float) w_[i].shape_[1])};
+            w_[i].rand(-lim, lim);
+            b_[i].fill(0.0f);
+        }
+    }
+
+    void NN::nn_rand_he()
+    {
+        for (size_t i {}; i < count_; ++i)
+        {
+            a_[i + 1].dot(w_[i], a_[i]);
+            a_[i + 1].sum_bias(b_[i]);
+
+            if (i + 1 < count) a_[i + 1].leaky_relu();
+            else a_[i + 1].softmax();
+        }
+    }
 } //namespace gnn
