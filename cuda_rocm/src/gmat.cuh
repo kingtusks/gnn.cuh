@@ -83,6 +83,11 @@ namespace gnn {
         Tensor& operator+=(const Tensor& other) { return sum(other); };
         Tensor operator+(const Tensor& other);
         Tensor& dot(const Tensor& a, const Tensor& b, bool aT = {false}, bool bT = {false}, bool naive = {false});
+        Tensor& sig();
+        Tensor& tanh();
+        Tensor& relu();
+        Tensor& leaky_relu(float slope = {1e-2f});
+        Tensor& elu(float alpha = {1.0f});
         KernelTensorInfo kernel_info() const;
         void info(const char* name) const;
         void print(const char* name) const;

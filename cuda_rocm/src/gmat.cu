@@ -269,6 +269,76 @@ namespace gnn
             if (i < m && j < n)
                 c[i * ci + j * cj] = res;
         }
+
+        __global__ void sig(float* es, KernelTensorInfo kti, size_t count)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t idx {};
+            for (size_t j {}; j < kti.dims_; ++j)
+            {
+                idx += (i % kti.shape_[j]) * kti.strides_[j];
+                i /= kti.shape_[j];
+            }
+            es[idx] = 1.f / (1.f + expf(-es[idx]));
+        }
+
+        __global__ void tanh(float* es, KernelTensorInfo kti, size_t count)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t idx {};
+            for (size_t j {}; j < kti.dims_; ++j)
+            {
+                idx += (i % kti.shape_[j]) * kti.strides_[j];
+                i /= kti.shape_[j];
+            }
+            es[idx] = tanhf(es[idx]);
+        }
+
+        __global__ void elu(float* es, KernelTensorInfo kti, size_t count)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t idx {};
+            for (size_t j {}; j < kti.dims_; ++j)
+            {
+                idx += (i % kti.shape_[j]) * kti.strides_[j];
+                i /= kti.shape_[j];
+            }
+            es[idx] = fmaxf(es[idx], 0.f);
+        }
+
+        __global__ void leaky_relu(float* es, KernelTensorInfo kti, size_t count, float slope)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t idx {};
+            for (size_t j {}; j < kti.dims_; ++j)
+            {
+                idx += (i % kti.shape_[j]) * kti.strides_[j];
+                i /= kti.shape_[j];
+            }
+            es[idx] = fmaxf(es[idx], slope * es[idx]);
+        }
+
+        __global__ void elu(float* es, KernelTensorInfo kti, size_t count, float alpha)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t idx {};
+            for (size_t j {}; j < kti.dims_; ++j)
+            {
+                idx += (i % kti.shape_[j]) * kti.strides_[j];
+                i /= kti.shape_[j];
+            }
+            es[idx] = es[idx] > 0.f ? es[idx] : alpha * (expf(es[idx]) - 1.f);
+        }
     } // namespace kernels
 
     // constructors + ro5
@@ -608,6 +678,51 @@ namespace gnn
         };
         kernels::dot_naive<<<blocks, threads>>>(es_, a.es_, b.es_, m, n, k,
                 strides_[0], strides_[1], ai, ak, bj, bk);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor& sig()
+    {
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
+        kernels::sig<<<blocks, threads>>>();
+        CUDA_CHECK(cudaGetLastError(es_, kernel_info(), count_);
+        return *this;
+    }
+
+    Tensor& tanh()
+    {
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
+        kernels::tanh<<<blocks, threads>>>(es_, kernel_info(), count_);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor& relu()
+    {
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
+        kernels::relu<<<blocks, threads>>>(es_, kernel_info(), count_);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor& leaky_relu(float slope = {1e-2f})
+    {
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
+        kernels::leaky_relu<<<blocks, threads>>>(es_, kernel_info(), count_, slope);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor& elu(float alpha = {1.0f})
+    {
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
+        kernels::elu<<<blocks, threads>>>(es_, kernel_info(), count_, alpha);
         CUDA_CHECK(cudaGetLastError());
         return *this;
     }
