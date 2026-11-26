@@ -339,6 +339,30 @@ namespace gnn
             }
             es[idx] = es[idx] > 0.f ? es[idx] : alpha * (expf(es[idx]) - 1.f);
         }
+
+        __global__ void softmax(float* es, KernelTensorInfo kti)
+        {
+            size_t s {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (s >= kti.shape_[1]) return;
+
+            float* col {es + s * kti.strides_[1]};
+            size_t n {kti.shape_[0]};
+            size_t st {kti.strides_[0]};
+
+            float mx {col[0]};
+            for (size_t j {1}; j < n; ++j)
+                mx = fmaxf(mx, col[j * st]);
+
+            float sum {};
+            for (size_t j {}; j < n; ++j)
+            {
+                col[j * st] = expf(col[j * st] - mx);
+                sum += col[j * st];
+            }
+
+            for (size_t j {}; j < n; ++j)
+                col[j * st] /= sum;
+        }
     } // namespace kernels
 
     // constructors + ro5
@@ -723,6 +747,17 @@ namespace gnn
         unsigned int threads {256};
         unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
         kernels::elu<<<blocks, threads>>>(es_, kernel_info(), count_, alpha);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor& Tensor::softmax()
+    {
+        GNN_ASSERT(dims_ == 2);
+
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
+        kernels::softmax<<<blocks, threads>>>(es_, kernel_info());
         CUDA_CHECK(cudaGetLastError());
         return *this;
     }

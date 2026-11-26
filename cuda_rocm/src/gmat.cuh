@@ -88,6 +88,7 @@ namespace gnn {
         Tensor& relu();
         Tensor& leaky_relu(float slope = {1e-2f});
         Tensor& elu(float alpha = {1.0f});
+        Tensor& softmax();
         KernelTensorInfo kernel_info() const;
         void info(const char* name) const;
         void print(const char* name) const;
