@@ -1,4 +1,4 @@
-#include "gmat.cuh"
+#include "gnn.cuh"
 
 int main() {
     gnn::Tensor t({3, 4, 2, 2});

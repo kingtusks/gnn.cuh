@@ -13,7 +13,8 @@
 #define GNN_ASSERT assert
 #endif //GNN_ASSERT
 
-namespace gnn {
+namespace gnn
+{
     inline std::uint64_t tensor_rand_seed {0x040507ULL};
     const static size_t max_dims {5}; // 5 for now cus uh yea
 
@@ -45,7 +46,8 @@ namespace gnn {
         unsigned int strides_[max_dims];
     };
 
-    struct Tensor {
+    struct Tensor
+    {
         bool owns_ {true};
         unsigned int dims_ {};
         size_t count_ {};
@@ -104,7 +106,5 @@ namespace gnn {
 
             return es_[s];
         }
-
-        //private:
-    };
+    }; //struct Tensor
 } //namespace gnn
