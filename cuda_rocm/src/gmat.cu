@@ -239,7 +239,7 @@ namespace gnn
         // 1024 is the max for a thread per block and 32^2 = 1024
         constexpr unsigned int TILE {32}; 
 
-        __global__ void dot_naive(float* c_es, float* a_es, constfloat* b_es,
+        __global__ void dot_naive(float* c_es, float* a_es, const float* b_es,
                 unsigned int m, unsigned int n, unsigned int k,
                 unsigned int ci, unsigned int cj,
                 unsigned int ai, unsigned int ak,
@@ -257,8 +257,8 @@ namespace gnn
                 unsigned int ka {t + threadIdx.y};
                 unsigned int kb {t + threadIdx.x};
 
-                As[threadIdx.y][threadIdx.x] = (i < m && ka < k) ? a[i * ai + ka * ak] : 0.f;
-                Bs[threadIdx.y][threadIdx.x] = (kb < k && j < n) ? b[kb * bk + j * bj] : 0.f;
+                As[threadIdx.y][threadIdx.x] = (i < m && ka < k) ? a_es[i * ai + ka * ak] : 0.f;
+                Bs[threadIdx.y][threadIdx.x] = (kb < k && j < n) ? b_es[kb * bk + j * bj] : 0.f;
                 __syncthreads();
 
                 for (unsigned int u {}; u < TILE; ++u)
@@ -267,7 +267,7 @@ namespace gnn
             }
 
             if (i < m && j < n)
-                c[i * ci + j * cj] = res;
+                c_es[i * ci + j * cj] = res;
         }
 
         __global__ void sig(float* es, KernelTensorInfo kti, size_t count)
@@ -624,7 +624,7 @@ namespace gnn
             GNN_ASSERT(shape_[i] == other.shape_[i]);
 
         unsigned int threads {256};
-        unsigned int blocks {(unsigned int) (other.shape_[0] + threads - 1) / threads};
+        unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
         kernels::sum<<<blocks, threads>>>(es_, other.es_, kernel_info(), other.kernel_info(), count_);
         CUDA_CHECK(cudaGetLastError());
         return *this;
@@ -687,7 +687,7 @@ namespace gnn
         unsigned int threads {256};
         unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
         kernels::sig<<<blocks, threads>>>(es_, kernel_info(), count_);
-        CUDA_CHECK(cudaGetLastError();
+        CUDA_CHECK(cudaGetLastError());
         return *this;
     }
 
@@ -709,7 +709,7 @@ namespace gnn
         return *this;
     }
 
-    Tensor& Tensor::leaky_relu(float slope = {1e-2f})
+    Tensor& Tensor::leaky_relu(float slope)
     {
         unsigned int threads {256};
         unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
@@ -718,7 +718,7 @@ namespace gnn
         return *this;
     }
 
-    Tensor& Tensor::elu(float alpha = {1.0f})
+    Tensor& Tensor::elu(float alpha)
     {
         unsigned int threads {256};
         unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
