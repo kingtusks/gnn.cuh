@@ -117,4 +117,31 @@ namespace gnn
         CUDA_CHECK(cudaMemcpy(&c, dc_.es_, sizeof(float), cudaMemcpyDeviceToHost));
         return c / (float) (nb * batch_);
     }
+
+    static void fdnudge(NN& nn, Tensor& t, Tensor& gt,
+            const Tensor& ti, const Tensor& to, float eps, float c)
+    {
+        for (size_t i {}; i < t.count_; ++i)
+        {
+            float saved;
+            CUDA_CHECK(cudaMemcpy(&saved, t.es_ + i, sizeof(float), cudaMemcpyDeviceToHost));
+
+            float nudged {saved + eps};
+            CUDA_CHECK(cudaMemcpy(t.es_ + i, &nudged, sizeof(float), cudaMemcpyHostToDevice));
+
+            float grad {(nn.nn_cost(ti, to) - c) / eps};
+            CUDA_CHECK(cudaMemcpy(t.es_ + i, &saved, sizeof(float), cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(gt.es_ + i, &grad, sizeof(float), cudaMemcpyHostToDevice));
+        }
+    }
+
+    void NN::finite_diff(NN& g, const Tensor& ti, const Tensor& to, float eps)
+    {
+        float c {nn_cost(ti, to)};
+        for (size_t i {}; i < count_; ++i)
+        {
+            fdnudge(*this, w_[i], g.w_[i], ti, to, eps, c);
+            fdnudge(*this, b_[i], g.b_[i], ti, to, eps, c);
+        }
+    }
 } //namespace gnn
