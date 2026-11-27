@@ -3,6 +3,8 @@
 
 namespace gnn
 {
+    #define NN_PRINT(nn) nn_print(#nn);
+
     enum class Optimizer
     {
         SGD,
@@ -35,5 +37,6 @@ namespace gnn
         void nn_train(const Tensor& ti, const Tensor& to, size_t epochs, float rate, Optimizer opt);
         float nn_test(const Tensor& ti, const Tensor& to);
         void nn_infer(const Tensor& ti);
+        void nn_print(const char* name);
     }; //struct nn
 } //namespace gnn

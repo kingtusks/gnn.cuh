@@ -321,4 +321,14 @@ namespace gnn
             output().print("output");
         }
     }
+
+    void NN::nn_print(const char* name)
+    {
+        printf("%s\n", name);
+        for (size_t i {}; i < count_; ++i)
+        {
+            w_[i].print("w");
+            b_[i].print("b");
+        }
+    }
 } //namespace gnn
