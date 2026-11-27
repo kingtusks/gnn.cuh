@@ -311,4 +311,14 @@ namespace gnn
         printf("accuracy: %.2f%% (%d / %zu)\n", acc, (int) ok, total);
         return acc;
     }
+
+    void NN::nn_infer(const Tensor& ti)
+    {
+        for (unsigned int i {}; i + batch_ <= ti.shape_[1]; i += batch_)
+        {
+            input().copy_from(ti.slice(1, i, batch_));
+            nn_forward();
+            output().print("output");
+        }
+    }
 } //namespace gnn
