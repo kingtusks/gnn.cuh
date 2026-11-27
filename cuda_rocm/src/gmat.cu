@@ -408,6 +408,85 @@ namespace gnn
 
             es[ox * kti.strides_[0] + oy * kti.strides_[1] + co * kti.strides_[2] + n * kti.strides_[3]] = s;
         }
+
+        __global__ void conv_grad_b(float* gb_es, const float* d_es,
+                KernelTensorInfo gb_kti, KernelTensorInfo d_kti)
+        {
+            size_t co {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (co >= d_kti.shape_[2]) return;
+
+            float s {};
+            for (size_t n {}; n < d_kti.shape_[3]; ++n)
+                for (size_t oy {}; oy < d_kti.shape_[1]; ++oy)
+                    for (size_t ox {}; ox < d_kti.shape_[0]; ++ox)
+                        s += d_es[ox * d_kti.strides_[0] + oy * d_kti.strides_[1]
+                                + co * d_kti.strides_[2] + n * d_kti.strides_[3]];
+
+            gb_es[co * gb_kti.strides_[0]] = s;
+        }
+
+        __global__ void conv_grad_w(float* gw_es, const float* in_es, const float* d_es,
+                KernelTensorInfo kti, KernelTensorInfo in_kti, KernelTensorInfo d_kti,
+                size_t count, unsigned int stride)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t kx {i % kti.shape_[0]}; i /= kti.shape_[0];
+            size_t ky {i % kti.shape_[1]}; i /= kti.shape_[1];
+            size_t ci {i % kti.shape_[2]}; i /= kti.shape_[2];
+            size_t co {i};
+
+            float s {};
+            for (size_t n {}; n < d_kti.shape_[3]; ++n)
+                for (size_t oy {}; oy < d_kti.shape_[1]; ++oy)
+                    for (size_t ox {}; ox < d_kti.shape_[0]; ++ox)
+                    {
+                        float d {d_es[ox * d_kti.strides_[0] + oy * d_kti.strides_[1]
+                                    + co * d_kti.strides_[2] + n * d_kti.strides_[3]]};
+                        float x {in_es[(ox * stride + kx) * in_kti.strides_[0]
+                                    + (oy * stride + ky) * in_kti.strides_[1]
+                                    + ci * in_kti.strides_[2] + n * in_kti.strides_[3]]};
+                        s += d * x;
+                    }
+
+            gw_es[kx * kti.strides_[0] + ky * kti.strides_[1]
+                + ci * kti.strides_[2] + co * kti.strides_[3]] = s;
+        }
+
+        __global__ void conv_grad_in(float* gin_es, const float* d_es, const float* w_es,
+                KernelTensorInfo kti, KernelTensorInfo d_kti, KernelTensorInfo w_kti,
+                size_t count, unsigned int stride)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t x  {i % kti.shape_[0]}; i /= kti.shape_[0];
+            size_t y  {i % kti.shape_[1]}; i /= kti.shape_[1];
+            size_t ci {i % kti.shape_[2]}; i /= kti.shape_[2];
+            size_t n  {i};
+
+            float s {};
+            for (size_t co {}; co < w_kti.shape_[3]; ++co)
+                for (size_t ky {}; ky < w_kti.shape_[1]; ++ky)
+                    for (size_t kx {}; kx < w_kti.shape_[0]; ++kx)
+                    {
+                        if (x < kx || y < ky) continue;
+                        size_t tx {x - kx}, ty {y - ky};
+                        if (tx % stride != 0 || ty % stride != 0) continue;
+
+                        size_t ox {tx / stride}, oy {ty / stride};
+                        if (ox >= d_kti.shape_[0] || oy >= d_kti.shape_[1]) continue;
+
+                        s += d_es[ox * d_kti.strides_[0] + oy * d_kti.strides_[1]
+                                + co * d_kti.strides_[2] + n * d_kti.strides_[3]]
+                        * w_es[kx * w_kti.strides_[0] + ky * w_kti.strides_[1]
+                                + ci * w_kti.strides_[2] + co * w_kti.strides_[3]];
+                    }
+
+            gin_es[x * kti.strides_[0] + y * kti.strides_[1]
+                + ci * kti.strides_[2] + n * kti.strides_[3]] = s;
+        }
     } // namespace kernels
 
     // constructors + ro5
@@ -861,6 +940,44 @@ namespace gnn
         kernels::conv<<<blocks, threads>>>(es_, in.es_, w.es_, b.es_,
                 kernel_info(), in.kernel_info(), w.kernel_info(), b.kernel_info(),
                 count_, stride);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor& Tensor::conv_grad_b(const Tensor& delta)
+    {
+        GNN_ASSERT(delta.dims_ == 4 && shape_[0] == delta.shape_[2]);
+
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) ((delta.shape_[2] + threads - 1) / threads)};
+        kernels::conv_grad_b<<<blocks, threads>>>(es_, delta.es_, kernel_info(), delta.kernel_info());
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor& Tensor::conv_grad_w(const Tensor& in, const Tensor& delta, unsigned int stride)
+    {
+        GNN_ASSERT(dims_ == 4 && in.dims_ == 4 && delta.dims_ == 4);
+        GNN_ASSERT(shape_[2] == in.shape_[2] && shape_[3] == delta.shape_[2]);
+
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) ((count_ + threads - 1) / threads)};
+        kernels::conv_grad_w<<<blocks, threads>>>(es_, in.es_, delta.es_,
+                kernel_info(), in.kernel_info(), delta.kernel_info(), count_, stride);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor& Tensor::conv_grad_in(const Tensor& delta, const Tensor& w, unsigned int stride)
+    {
+        GNN_ASSERT(dims_ == 4 && delta.dims_ == 4 && w.dims_ == 4);
+        GNN_ASSERT(shape_[2] == w.shape_[2] && delta.shape_[2] == w.shape_[3]);
+        GNN_ASSERT(shape_[3] == delta.shape_[3]);
+
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) ((count_ + threads - 1) / threads)};
+        kernels::conv_grad_in<<<blocks, threads>>>(es_, delta.es_, w.es_,
+                kernel_info(), delta.kernel_info(), w.kernel_info(), count_, stride);
         CUDA_CHECK(cudaGetLastError());
         return *this;
     }

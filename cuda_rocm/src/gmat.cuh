@@ -94,6 +94,9 @@ namespace gnn
         Tensor& elu(float alpha = {1.0f});
         Tensor& softmax();
         Tensor& conv(const Tensor& in, const Tensor& w, const Tensor& b, unsigned int stride = {1});
+        Tensor& conv_grad_b(const Tensor& delta);
+        Tensor& conv_grad_w(const Tensor& in, const Tensor& delta, unsigned int stride = {1});
+        Tensor& conv_grad_in(const Tensor& delta, const Tensor& w, unsigned int stride = {1});
         KernelTensorInfo kernel_info() const;
         void info(const char* name) const;
         void print(const char* name) const;
