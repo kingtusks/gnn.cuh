@@ -59,6 +59,21 @@ namespace gnn
             if (a_es[c * a_kti.strides_[0] + r * a_kti.strides_[1]] <= 0.f)
                 ga_es[c * ga_kti.strides_[0] + r * ga_kti.strides_[1]] *= slope;
         }
+
+        __global__ void test(const float* o_es, const float* y_es, float* dc_es,
+                KernelTensorInfo o_kti, KernelTensorInfo y_kti)
+        {
+            size_t r {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (r >= o_kti.shape_[1]) return;
+
+            size_t po {}, py {};
+            for (size_t c {1}; c < o_kti.shape_[0]; ++c)
+            {
+                if (o_es[c * o_kti.strides_[0] + r * o_kti.strides_[1]] > o_es[po * o_kti.strides_[0] + r * o_kti.strides_[1]]) po = c;
+                if (y_es[c * y_kti.strides_[0] + r * y_kti.strides_[1]] > y_es[py * y_kti.strides_[0] + r * y_kti.strides_[1]]) py = c;
+            }
+            if (po == py) atomicAdd(dc_es, 1.0f);
+        }
     } //namespace kernels
 
     NN::NN(const std::vector<unsigned int>& dims, unsigned int batch) :
@@ -266,5 +281,34 @@ namespace gnn
             if (e % 10 == 0)
                 printf("%zu: cost: %f\n", e, nn_cost(ti, to));
         }
+    }
+
+    float NN::nn_test(const Tensor& ti, const Tensor& to)
+    {
+        GNN_ASSERT(ti.shape_[1] == to.shape_[1]);
+        GNN_ASSERT(to.shape_[0] == output().shape_[0]);
+
+        dc_.fill(0.0f);
+        unsigned int threads {256};
+        unsigned int blocks {(batch_ + threads - 1) / threads};
+
+        size_t nb {};
+        for (unsigned int i {}; i + batch_ <= ti.shape_[1]; i += batch_, ++nb)
+        {
+            input().copy_from(ti.slice(1, i, batch_));
+            nn_forward();
+            Tensor y = to.slice(1, i, batch_);
+            kernels::test<<<blocks, threads>>>(output().es_, y.es_, dc_.es_,
+                    output().kernel_info(), y.kernel_info());
+            CUDA_CHECK(cudaGetLastError());
+        }
+        GNN_ASSERT(nb > 0);
+
+        float ok;
+        CUDA_CHECK(cudaMemcpy(&ok, dc_.es_, sizeof(float), cudaMemcpyDeviceToHost));
+        size_t total {nb * batch_};
+        float acc {100.0f * ok / (float) total};
+        printf("accuracy: %.2f%% (%d / %zu)\n", acc, (int) ok, total);
+        return acc;
     }
 } //namespace gnn
