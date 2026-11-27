@@ -487,6 +487,60 @@ namespace gnn
             gin_es[x * kti.strides_[0] + y * kti.strides_[1]
                 + ci * kti.strides_[2] + n * kti.strides_[3]] = s;
         }
+
+        __global__ void max_pool_grad(float* gin_es, const float* src_es, const float* d_es,
+                KernelTensorInfo kti, KernelTensorInfo src_kti, KernelTensorInfo d_kti,
+                size_t count, size_t fx, size_t fy, size_t sx, size_t sy)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t x {}, y {}, gidx {}, d_extra {}, s_extra {};
+            for (size_t j {}; j < kti.dims_; ++j)
+            {
+                size_t c {i % kti.shape_[j]};
+                i /= kti.shape_[j];
+                gidx += c * kti.strides_[j];
+                if (j == 0) x = c;
+                else if (j == 1) y = c;
+                else
+                {
+                    d_extra += c * d_kti.strides_[j];
+                    s_extra += c * src_kti.strides_[j];
+                }
+            }
+
+            float s {};
+            for (size_t ky {}; ky < fy; ++ky)
+                for (size_t kx {}; kx < fx; ++kx)
+                {
+                    if (x < kx || y < ky) continue;
+                    size_t tx {x - kx}, ty {y - ky};
+                    if (tx % sx != 0 || ty % sy != 0) continue;
+
+                    size_t ox {tx / sx}, oy {ty / sy};
+                    if (ox >= d_kti.shape_[0] || oy >= d_kti.shape_[1]) continue;
+
+                    size_t bx {ox * sx}, by {oy * sy};
+                    size_t ax {bx}, ay {by};
+                    float best {src_es[bx * src_kti.strides_[0] + by * src_kti.strides_[1] + s_extra]};
+                    for (size_t wy {}; wy < fy; ++wy)
+                        for (size_t wx {}; wx < fx; ++wx)
+                        {
+                            float v {src_es[(bx + wx) * src_kti.strides_[0]
+                                        + (by + wy) * src_kti.strides_[1] + s_extra]};
+                            if (v > best)
+                            {
+                                best = v;
+                                ax = bx + wx;
+                                ay = by + wy;
+                            }
+                        }
+                    if (ax == x && ay == y)
+                        s += d_es[ox * d_kti.strides_[0] + oy * d_kti.strides_[1] + d_extra];
+                }
+            gin_es[gidx] = s;
+        }
     } // namespace kernels
 
     // constructors + ro5
@@ -978,6 +1032,22 @@ namespace gnn
         unsigned int blocks {(unsigned int) ((count_ + threads - 1) / threads)};
         kernels::conv_grad_in<<<blocks, threads>>>(es_, delta.es_, w.es_,
                 kernel_info(), delta.kernel_info(), w.kernel_info(), count_, stride);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor& Tensor::max_pool_grad(const Tensor& src, const Tensor& delta,
+        size_t fx, size_t fy, size_t sx, size_t sy)
+    {
+        GNN_ASSERT(dims_ == src.dims_ && dims_ == delta.dims_ && dims_ >= 2);
+        for (size_t k {}; k < dims_; ++k)
+            GNN_ASSERT(shape_[k] == src.shape_[k]);
+
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) ((count_ + threads - 1) / threads)};
+        kernels::max_pool_grad<<<blocks, threads>>>(es_, src.es_, delta.es_,
+                kernel_info(), src.kernel_info(), delta.kernel_info(),
+                count_, fx, fy, sx, sy);
         CUDA_CHECK(cudaGetLastError());
         return *this;
     }
