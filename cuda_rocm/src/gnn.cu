@@ -45,7 +45,6 @@ namespace gnn
                         - y_es[c * y_kti.strides_[0] + r * y_kti.strides_[1]]);
         }
 
-        //leaky relu for now (may add options later)
         __global__ void activation_grad(const float* a_es, float* ga_es,
                 KernelTensorInfo a_kti, KernelTensorInfo ga_kti,
                 size_t count, float slope)
@@ -53,11 +52,15 @@ namespace gnn
             size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
             if (i >= count) return;
 
-            size_t c {i % ga_kti.shape_[0]};
-            size_t r {i / ga_kti.shape_[0]};
-
-            if (a_es[c * a_kti.strides_[0] + r * a_kti.strides_[1]] <= 0.f)
-                ga_es[c * ga_kti.strides_[0] + r * ga_kti.strides_[1]] *= slope;
+            size_t a_idx {}, g_idx {};
+            for (size_t j {}; j < ga_kti.dims_; ++j)
+            {
+                size_t c {i % ga_kti.shape_[j]};
+                i /= ga_kti.shape_[j];
+                a_idx += c * a_kti.strides_[j];
+                g_idx += c * ga_kti.strides_[j];
+            }
+            if (a_es[a_idx] <= 0.f) ga_es[g_idx] *= slope;
         }
 
         __global__ void test(const float* o_es, const float* y_es, float* dc_es,
