@@ -3,7 +3,7 @@
 
 namespace gnn
 {
-    #define NN_PRINT(nn) nn_print(#nn);
+    #define NN_PRINT(nn) (nn).nn_print(#nn)
 
     enum class Optimizer
     {

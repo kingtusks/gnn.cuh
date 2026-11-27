@@ -380,6 +380,34 @@ namespace gnn
             for (size_t j {}; j < n; ++j)
                 col[j * st] /= sum;
         }
+
+        __global__ void conv(float* es, const float* in_es, const float* w_es, const float* b_es,
+                KernelTensorInfo kti, KernelTensorInfo in_kti,
+                KernelTensorInfo w_kti, KernelTensorInfo b_kti,
+                size_t count, unsigned int stride)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t ox {i % kti.shape_[0]}; i /= kti.shape_[0];
+            size_t oy {i % kti.shape_[1]}; i /= kti.shape_[1];
+            size_t co {i % kti.shape_[2]}; i /= kti.shape_[2];
+            size_t n {i};
+
+            float s {b_es[co * b_kti.strides_[0]]};
+            for (size_t ci {}; ci < w_kti.shape_[2]; ++ci)
+                for (size_t ky {}; ky < w_kti.shape_[1]; ++ky)
+                    for (size_t kx {}; kx < w_kti.shape_[0]; ++kx)
+                    {
+                        size_t in_idx {(ox * stride + kx) * in_kti.strides_[0] + (oy * stride + ky) * in_kti.strides_[1]
+                                    + ci * in_kti.strides_[2] + n  * in_kti.strides_[3]};
+                        size_t w_idx {kx * w_kti.strides_[0] + ky * w_kti.strides_[1]
+                                    + ci * w_kti.strides_[2] + co * w_kti.strides_[3]};
+                        s += in_es[in_idx] * w_es[w_idx];
+                    }
+
+            es[ox * kti.strides_[0] + oy * kti.strides_[1] + co * kti.strides_[2] + n * kti.strides_[3]] = s;
+        }
     } // namespace kernels
 
     // constructors + ro5
@@ -814,6 +842,25 @@ namespace gnn
         unsigned int threads {256};
         unsigned int blocks {(unsigned int) (count_ + threads - 1) / threads};
         kernels::softmax<<<blocks, threads>>>(es_, kernel_info());
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+
+    Tensor& Tensor::conv(const Tensor& in, const Tensor& w, const Tensor& b, unsigned int stride)
+    {
+        GNN_ASSERT(dims_ == 4 && in.dims_ == 4 && w.dims_ == 4);
+        GNN_ASSERT(w.shape_[2] == in.shape_[2]);
+        GNN_ASSERT(shape_[2] == w.shape_[3] && b.shape_[0] == w.shape_[3]);
+        GNN_ASSERT(shape_[3] == in.shape_[3]);
+        GNN_ASSERT(shape_[0] == (in.shape_[0] - w.shape_[0]) / stride + 1);
+        GNN_ASSERT(shape_[1] == (in.shape_[1] - w.shape_[1]) / stride + 1);
+
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) ((count_ + threads - 1) / threads)};
+        kernels::conv<<<blocks, threads>>>(es_, in.es_, w.es_, b.es_,
+                kernel_info(), in.kernel_info(), w.kernel_info(), b.kernel_info(),
+                count_, stride);
         CUDA_CHECK(cudaGetLastError());
         return *this;
     }

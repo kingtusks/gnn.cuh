@@ -93,6 +93,7 @@ namespace gnn
         Tensor& leaky_relu(float slope = {1e-2f});
         Tensor& elu(float alpha = {1.0f});
         Tensor& softmax();
+        Tensor& conv(const Tensor& in, const Tensor& w, const Tensor& b, unsigned int stride = {1});
         KernelTensorInfo kernel_info() const;
         void info(const char* name) const;
         void print(const char* name) const;
