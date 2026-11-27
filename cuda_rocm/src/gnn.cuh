@@ -32,5 +32,6 @@ namespace gnn
         void nn_sgd(const NN& g, float rate);
         void nn_momentum(const NN& g, NN& v, float rate);
         void nn_adam(const NN& g, NN& m1, NN& m2, size_t t, float rate = {1e-3f});
+        void nn_train(const Tensor& ti, const Tensor& to, size_t epochs, float rate, Optimizer opt);
     }; //struct nn
 } //namespace gnn

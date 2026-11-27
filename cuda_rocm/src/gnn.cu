@@ -236,4 +236,35 @@ namespace gnn
             b_[i].adam(g.b_[i], m1.b_[i], m2.b_[i], t, 0.9f, 0.999f, rate);
         }
     }
+
+    void NN::nn_train(const Tensor& ti, const Tensor& to, size_t epochs, float rate, Optimizer opt)
+    {
+        nn_rand_he();
+
+        NN g {*this};
+        NN v {*this}, m1 {*this}, m2 {*this};
+        v.nn_fill(0.0f);
+        m1.nn_fill(0.0f);
+        m2.nn_fill(0.0f);
+        size_t t {};
+
+        for (size_t e {1}; e <= epochs; ++e)
+        {
+            for (unsigned int j {}; j + batch_ <= ti.shape_[1]; j += batch_)
+            {
+                backprop(g, ti.slice(1, j, batch_), to.slice(1, j, batch_));
+                switch (opt)
+                {
+                    case Optimizer::SGD:
+                        nn_sgd(g, rate); break;
+                    case Optimizer::SGDMomentum:
+                        nn_momentum(g, v, rate); break;
+                    case Optimizer::Adam:
+                        nn_adam(g, m1, m2, ++t, rate); break;
+                }
+            }
+            if (e % 10 == 0)
+                printf("%zu: cost: %f\n", e, nn_cost(ti, to));
+        }
+    }
 } //namespace gnn
