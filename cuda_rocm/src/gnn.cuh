@@ -21,5 +21,6 @@ namespace gnn
         void nn_forward();
         float nn_cost(const Tensor& ti, const Tensor& to);
         void finite_diff(NN& g, const Tensor& ti, const Tensor& to, float eps = {1e-3f});
+        void backprop(NN& g, const Tensor& ti, const Tensor& to);
     }; //struct nn
 } //namespace gnn

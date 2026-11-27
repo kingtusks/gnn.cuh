@@ -29,6 +29,36 @@ namespace gnn
             }
             if (tx == 0) atomicAdd(dc_es, sd[0]);
         }
+
+        __global__ void out_grad(const float* a_es, float* ga_es, const float* y_es,
+                KernelTensorInfo a_kti, KernelTensorInfo ga_kti, KernelTensorInfo y_kti,
+                size_t count, float scale)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t c {i % ga_kti.shape_[0]};
+            size_t r {i / ga_kti.shape_[0]};
+
+            ga_es[c * ga_kti.strides_[0] + r * ga_kti.strides_[1]] =
+                scale * (a_es[c * a_kti.strides_[0] + r * a_kti.strides_[1]]
+                        - y_es[c * y_kti.strides_[0] + r * y_kti.strides_[1]]);
+        }
+
+        //leaky relu for now (may add options later)
+        __global__ void activation_grad(const float* a_es, float* ga_es,
+                KernelTensorInfo a_kti, KernelTensorInfo ga_kti,
+                size_t count, float slope)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t c {i % ga_kti.shape_[0]};
+            size_t r {i / ga_kti.shape_[0]};
+
+            if (a_es[c * a_kti.strides_[0] + r * a_kti.strides_[1]] <= 0.f)
+                ga_es[c * ga_kti.strides_[0] + r * ga_kti.strides_[1]] *= slope;
+        }
     } //namespace kernels
 
     NN::NN(const std::vector<unsigned int>& dims, unsigned int batch) :
@@ -142,6 +172,41 @@ namespace gnn
         {
             fdnudge(*this, w_[i], g.w_[i], ti, to, eps, c);
             fdnudge(*this, b_[i], g.b_[i], ti, to, eps, c);
+        }
+    }
+
+    void NN::backprop(NN& g, const Tensor& ti, const Tensor& to)
+    {
+        GNN_ASSERT(ti.shape_[1] == batch_ && to.shape_[1] == batch_);
+        input().copy_from(ti);
+        nn_forward();
+
+        unsigned int threads {256};
+        Tensor& out {output()};
+        Tensor& gout {g.output()};
+        unsigned int o_blocks {(unsigned int) (out.count_ + threads - 1) / threads};
+        kernels::out_grad<<<o_blocks, threads>>>(out.es_, gout.es_, to.es_,
+                out.kernel_info(), gout.kernel_info(), to.kernel_info(),
+                out.count_, 1.0f / (float) batch_);
+        CUDA_CHECK(cudaGetLastError());
+
+        for (size_t i {count_}; i > 0; --i)
+        {
+            Tensor& g_ai {g.a_[i]};
+            const Tensor& ai {a_[i]};
+
+            if (i < count_)
+            {
+                unsigned int a_blocks {(unsigned int) (ai.count_ + threads - 1) / threads};
+                kernels::activation_grad<<<a_blocks, threads>>>(ai.es_, g_ai.es_,
+                        ai.kernel_info(), g_ai.kernel_info(), ai.count_, 1e-2f);
+                CUDA_CHECK(cudaGetLastError());
+            }
+
+            g.w_[i - 1].dot(g_ai, a_[i - 1], false, true);
+            g.b_[i - 1].sum_collapse(g_ai);
+            if (i > 1)
+                g.a_[i - 1].dot(w_[i - 1], g_ai, true, false);
         }
     }
 } //namespace gnn
