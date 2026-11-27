@@ -501,6 +501,51 @@ namespace gnn
         }
     }
 
+    Tensor Tensor::reshape(std::initializer_list<unsigned int> dims) const
+    {
+        GNN_ASSERT(is_contiguous());
+        GNN_ASSERT(dims.size() > 0 && dims.size() <= max_dims);
+
+        Tensor t;
+        t.owns_ = false;
+        t.es_ = es_;
+        t.dims_ = dims.size();
+        t.count_ = 1;
+
+        size_t i {};
+        for (unsigned int d : dims)
+        {
+            t.shape_[i++] = d;
+            t.count_ *= d;
+        }
+        GNN_ASSERT(t.count_ == count_);
+
+        t.strides_[0] = 1;
+        for (size_t j {}; ++j < t.dims_;)
+            t.strides_[j] = t.strides_[j - 1] * t.shape_[j - 1];
+        return t;
+    }
+
+    Tensor Tensor::slice(unsigned int dim, unsigned int start, unsigned int len) const
+    {
+        GNN_ASSERT(dim < dims_ && len > 0 && start + len <= shape_[dim]);
+
+        Tensor t;
+        t.owns_ = false;
+        t.dims_ = dims_;
+        t.es_ = es_ + start * strides_[dim];
+        t.count_ = count_ / shape_[dim] * len;
+
+        for (size_t i {}; i < dims_; ++i)
+        {
+            t.shape_[i] = shape_[i];
+            t.strides_[i] = strides_[i];
+        }
+
+        t.shape_[dim] = len;
+        return t;
+    }
+
     Tensor& Tensor::copy_from(const Tensor& src)
     {
         GNN_ASSERT(dims_ = src.dims_);
@@ -536,26 +581,6 @@ namespace gnn
         kernels::rand<<<blocks, threads>>>(es_, kti, count_, seed, low, high);
         CUDA_CHECK(cudaGetLastError());
         return *this;
-    }
-
-    Tensor Tensor::slice(unsigned int dim, unsigned int start, unsigned int len) const
-    {
-        GNN_ASSERT(dim < dims_ && len > 0 && start + len <= shape_[dim]);
-
-        Tensor t;
-        t.owns_ = false;
-        t.dims_ = dims_;
-        t.es_ = es_ + start * strides_[dim];
-        t.count_ = count_ / shape_[dim] * len;
-
-        for (size_t i {}; i < dims_; ++i)
-        {
-            t.shape_[i] = shape_[i];
-            t.strides_[i] = strides_[i];
-        }
-
-        t.shape_[dim] = len;
-        return t;
     }
 
     Tensor& Tensor::pad(const Tensor& src, float p_num, unsigned int p_size)
