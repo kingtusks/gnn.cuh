@@ -209,4 +209,31 @@ namespace gnn
                 g.a_[i - 1].dot(w_[i - 1], g_ai, true, false);
         }
     }
+
+    void NN::nn_sgd(const NN& g, float rate)
+    {
+        for (size_t i {}; i < count_; ++i)
+        {
+            w_[i].sgd(g.w_[i], rate);
+            b_[i].sgd(g.b_[i], rate);
+        }
+    }
+
+    void NN::nn_momentum(const NN& g, NN& v, float rate)
+    {
+        for (size_t i {}; i < count_; ++i)
+        {
+            w_[i].momentum(g.w_[i], v.w_[i], rate);
+            b_[i].momentum(g.b_[i], v.b_[i], rate);
+        }
+    }
+
+    void NN::nn_adam(const NN& g, NN& m1, NN& m2, size_t t, float rate)
+    {
+        for (size_t i {}; i < count_; ++i)
+        {
+            w_[i].adam(g.w_[i], m1.w_[i], m2.w_[i], t, 0.9f, 0.999f, rate);
+            b_[i].adam(g.b_[i], m1.b_[i], m2.b_[i], t, 0.9f, 0.999f, rate);
+        }
+    }
 } //namespace gnn

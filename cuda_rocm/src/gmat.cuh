@@ -15,7 +15,7 @@
 
 namespace gnn
 {
-    inline std::uint64_t tensor_rand_seed {0x040507ULL};
+    inline std::uint64_t tensor_rand_seed {0x161208ULL};
     const static size_t max_dims {5}; // 5 for now cus uh yea
 
     void cuda_check(cudaError_t err, const char* file, int line);

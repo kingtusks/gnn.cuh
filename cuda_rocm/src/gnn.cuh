@@ -3,6 +3,13 @@
 
 namespace gnn
 {
+    enum class Optimizer
+    {
+        SGD,
+        SGDMomentum,
+        Adam
+    };
+
     struct NN
     {
         size_t count_ {};
@@ -22,5 +29,8 @@ namespace gnn
         float nn_cost(const Tensor& ti, const Tensor& to);
         void finite_diff(NN& g, const Tensor& ti, const Tensor& to, float eps = {1e-3f});
         void backprop(NN& g, const Tensor& ti, const Tensor& to);
+        void nn_sgd(const NN& g, float rate);
+        void nn_momentum(const NN& g, NN& v, float rate);
+        void nn_adam(const NN& g, NN& m1, NN& m2, size_t t, float rate = {1e-3f});
     }; //struct nn
 } //namespace gnn
