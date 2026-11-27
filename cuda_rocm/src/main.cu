@@ -1,22 +1,14 @@
 #include "gnn.cuh"
 
 int main() {
-    gnn::Tensor in({3, 3, 1, 1}, {1,2,3, 4,5,6, 7,8,9});
-    gnn::Tensor w({2, 2, 1, 1}, {1,1, 1,1});
-    gnn::Tensor b({1, 1}, {0});
-    gnn::Tensor out({2, 2, 1, 1});
-
-    out.conv(in, w, b);
-
+    gnn::Tensor in({4, 4, 1, 1}, {1,2,3,4, 5,6,7,8, 9,10,11,12, 13,14,15,16});
     gnn::Tensor delta({2, 2, 1, 1});  delta.fill(1.0f);
-    gnn::Tensor gb({1, 1}), gw({2, 2, 1, 1}), gin({3, 3, 1, 1});
+    gnn::Tensor gmax({4, 4, 1, 1}), gavg({4, 4, 1, 1});
 
-    gb.conv_grad_b(delta);
-    gw.conv_grad_w(in, delta);
-    gin.conv_grad_in(delta, w);
+    gmax.max_pool_grad(in, delta, 2, 2, 2, 2);
+    gavg.avg_pool_grad(delta, 2, 2, 2, 2);
+    TENSOR_PRINT(gmax);
+    TENSOR_PRINT(gavg);
 
-    TENSOR_PRINT(gb);
-    TENSOR_PRINT(gw);
-    TENSOR_PRINT(gin);
     return 0;
 }

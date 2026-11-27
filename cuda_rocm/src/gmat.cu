@@ -541,6 +541,41 @@ namespace gnn
                 }
             gin_es[gidx] = s;
         }
+
+        __global__ void avg_pool_grad(float* gin_es, const float* d_es,
+                KernelTensorInfo kti, KernelTensorInfo d_kti, size_t count,
+                size_t fx, size_t fy, size_t sx, size_t sy)
+        {
+            size_t i {(size_t) blockIdx.x * blockDim.x + threadIdx.x};
+            if (i >= count) return;
+
+            size_t x {}, y {}, gidx {}, extra {};
+            for (size_t j {}; j < kti.dims_; ++j)
+            {
+                size_t c {i % kti.shape_[j]};
+                i /= kti.shape_[j];
+                gidx += c * kti.strides_[j];
+                if (j == 0) x = c;
+                else if (j == 1) y = c;
+                else extra += c * d_kti.strides_[j];
+            }
+
+            float s {};
+            for (size_t ky {}; ky < fy; ++ky)
+                for (size_t kx {}; kx < fx; ++kx)
+                {
+                    if (x < kx || y < ky) continue;
+                    size_t tx {x - kx}, ty {y - ky};
+                    if (tx % sx != 0 || ty % sy != 0) continue;
+
+                    size_t ox {tx / sx}, oy {ty / sy};
+                    if (ox >= d_kti.shape_[0] || oy >= d_kti.shape_[1]) continue;
+
+                    s += d_es[ox * d_kti.strides_[0] + oy * d_kti.strides_[1] + extra];
+                }
+
+            gin_es[gidx] = s / (float) (fx * fy);
+        }
     } // namespace kernels
 
     // constructors + ro5
@@ -1048,6 +1083,18 @@ namespace gnn
         kernels::max_pool_grad<<<blocks, threads>>>(es_, src.es_, delta.es_,
                 kernel_info(), src.kernel_info(), delta.kernel_info(),
                 count_, fx, fy, sx, sy);
+        CUDA_CHECK(cudaGetLastError());
+        return *this;
+    }
+
+    Tensor& Tensor::avg_pool_grad(const Tensor& delta, size_t fx, size_t fy, size_t sx, size_t sy)
+    {
+        GNN_ASSERT(dims_ == delta.dims_ && dims_ >= 2);
+
+        unsigned int threads {256};
+        unsigned int blocks {(unsigned int) ((count_ + threads - 1) / threads)};
+        kernels::avg_pool_grad<<<blocks, threads>>>(es_, delta.es_,
+                kernel_info(), delta.kernel_info(), count_, fx, fy, sx, sy);
         CUDA_CHECK(cudaGetLastError());
         return *this;
     }

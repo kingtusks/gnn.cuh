@@ -98,6 +98,7 @@ namespace gnn
         Tensor& conv_grad_w(const Tensor& in, const Tensor& delta, unsigned int stride = {1});
         Tensor& conv_grad_in(const Tensor& delta, const Tensor& w, unsigned int stride = {1});
         Tensor& max_pool_grad(const Tensor& src, const Tensor& delta, size_t fx, size_t fy, size_t sx, size_t sy);
+        Tensor& avg_pool_grad(const Tensor& delta, size_t fx, size_t fy, size_t sx, size_t sy);
         KernelTensorInfo kernel_info() const;
         void info(const char* name) const;
         void print(const char* name) const;
