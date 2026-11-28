@@ -254,7 +254,7 @@ namespace gnn
         }
 
         // 1024 is the max for a thread per block and 32^2 = 1024
-        constexpr unsigned int TILE {32}; 
+        constexpr unsigned int TILE {32};
 
         __global__ void dot_naive(float* c_es, float* a_es, const float* b_es,
                 unsigned int m, unsigned int n, unsigned int k,
